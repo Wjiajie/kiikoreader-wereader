@@ -1,5 +1,10 @@
 # 版本变更 / Changelog
 
+## 完整刷写包 / Full firmware bundle — 2026-11-15
+
+- 新增 Metalio S31 `0.3.3-rc113` 完整固件安装包、SHA-256 校验文件和 Windows 刷写说明。包内含 bootloader、分区表、应用固件和 OTA 数据镜像；刷写命令不擦除用户数据分区。
+- Added the Metalio S31 `0.3.3-rc113` full firmware installation bundle, SHA-256 checksum, and Windows flashing guide. It includes bootloader, partition table, application, and OTA data images; the command does not erase user-data partitions.
+
 ## 源码更新 / Source update — 2026-11-15
 
 - 首页最近阅读遇到微信读书缓存书籍时，重新进入首页会重新发起封面读取；封面任务失败会重试，避免首页长期缺少缓存书封面。

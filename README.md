@@ -39,6 +39,10 @@ python tools/build_firmware.py --board metalio47 --idf-metalio47 "$IDF_PATH" --p
 - `tools/`：构建、打包及开发检查工具。
 - `docs/`：功能架构、源码地图和构建说明。
 
+## 完整固件刷写包
+
+Metalio S31 0.3.3-rc113 完整刷写包与 Windows 使用说明见 [`firmware/metalio47/0.3.3-rc113/`](firmware/metalio47/0.3.3-rc113/)。该包包含固件安装所需的四个镜像，不会擦除整片闪存或覆盖用户数据分区。
+
 ## 许可
 
 仓库内容适用范围不同。既有固件、第三方组件、字体和资源按各自原许可执行；本项目许可说明见 [`LICENSE`](LICENSE) 与 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。新增文档的标注许可见文件头。请勿将整个仓库或历史固件概括为单一许可。
