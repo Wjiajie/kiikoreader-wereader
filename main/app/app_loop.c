@@ -915,6 +915,12 @@ static bool poll_media(app_ctx_t* ctx, const app_desc_t* current,
     bool ready = err == ESP_OK && info.mounted;
     bool lost = *mounted && !ready;
     bool gained = !*mounted && ready;
+    if (lost || gained) {
+        ESP_LOGW(TAG, "media transition lost=%u gained=%u err=%s present=%u mounted=%u invalidated=%u recovery=%u usb=%u",
+                 (unsigned)lost, (unsigned)gained, esp_err_to_name(err),
+                 (unsigned)info.present, (unsigned)info.mounted, (unsigned)*invalidated,
+                 (unsigned)read_pico_sd_needs_recovery(), (unsigned)usb_storage_active());
+    }
     *mounted = ready;
     if (ready) *invalidated = false;
     if (ready) { s_media_recovery_attempts = 0; s_media_recovery_after_ms = 0; }
@@ -922,6 +928,8 @@ static bool poll_media(app_ctx_t* ctx, const app_desc_t* current,
     if (gained && current->on_media_ready) current->on_media_ready(ctx);
 #if KIIKO_BOARD_METALIO47
     bool font_restored=gained && app_font_recover_media();
+    if (gained) ESP_LOGI(TAG, "media font recovery restored=%u builtin=%u path=%s",
+                         (unsigned)font_restored, (unsigned)ttf_font_is_builtin(), ttf_font_path());
 #endif
     if (!lost) {
         if (!ready) recover_media(ctx,&info);

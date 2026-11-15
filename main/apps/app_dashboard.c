@@ -313,18 +313,20 @@ static void remember_scan_state(const read_pico_sd_info_t *sd) {
 }
 
 static home_book_t *book_at(int index) { return index ? &s_recent[index - 1] : &s_current; }
-static void clear_cover_cache(void) {
+static void clear_cover_cache(bool keep_rasters) {
     free(s_folder);s_folder=NULL;s_folder_key=0;s_folder_attempted=false;
     for (int i = 0; i < 7; ++i) {
-        free(s_cover_cache[i].pixels);
-        memset(&s_cover_cache[i], 0, sizeof(s_cover_cache[i]));
+        if (!keep_rasters) {
+            free(s_cover_cache[i].pixels);
+            memset(&s_cover_cache[i], 0, sizeof(s_cover_cache[i]));
+        }
     }
     s_current.cover = NULL;
     for (int i = 0; i < 6; ++i) s_recent[i].cover = NULL;
 }
 
 void app_home_cover_mode_changed(void) {
-    clear_cover_cache();
+    clear_cover_cache(false);
     s_cover_next = 0;
 }
 static void restore_cover_cache(void) {
@@ -938,7 +940,7 @@ static void on_media_lost(app_ctx_t *ctx) {
 #else
 #endif
     app_home_release_clock_cache();
-    (void)ctx;clear_cover_cache();memset(&s_current,0,sizeof(s_current));memset(s_recent,0,sizeof(s_recent));
+    (void)ctx;clear_cover_cache(true);memset(&s_current,0,sizeof(s_current));memset(s_recent,0,sizeof(s_recent));
     s_books_cache_valid=false;s_excerpt[0]=0;s_avatar_ready=s_avatar_pending=false;
 }
 static void on_media_ready(app_ctx_t *ctx) {(void)ctx;s_books_cache_valid=false;s_scan_pending=true;avatar_prepare_state();}

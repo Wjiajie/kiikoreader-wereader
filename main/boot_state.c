@@ -216,7 +216,26 @@ void pico_boot_init(bool abnormal_reset) {
 }
 void pico_boot_ready(void) {
     s_record.starting = 0;
-    (void)store();
+    esp_err_t err = store();
+    if (err != ESP_OK) {
+        s_recovery = true;
+        s_recovery_reasons |= BOOT_RECOVERY_STORE;
+        return;
+    }
+    /*
+     * A generic panic/reset uses the built-in face and suppresses automatic book assets
+     * until the first complete product frame. Once that safe frame is visible, release
+     * the global fallback. Keep the per-book quarantine in s_record.blocked so an
+     * interrupted book is still excluded from automatic cover/metadata work.
+     * Corrupt startup records and failed NVS writes remain in recovery.
+     */
+    if (s_recovery && !(s_recovery_reasons & (BOOT_RECOVERY_RECORD | BOOT_RECOVERY_STORE))) {
+        unsigned reasons = s_recovery_reasons;
+        s_recovery = false;
+        s_recovery_reasons = 0;
+        ESP_LOGW("boot_state", "safe UI ready; releasing global recovery reasons=0x%02x quarantined=%u",
+                 reasons, (unsigned)(s_record.blocked[0] != 0));
+    }
 }
 bool pico_boot_recovery(void) { return s_recovery; }
 bool pico_boot_asset_allowed(const char *path) {

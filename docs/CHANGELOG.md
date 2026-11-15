@@ -4,11 +4,11 @@
 
 - 首页最近阅读遇到微信读书缓存书籍时，重新进入首页会重新发起封面读取；封面任务失败会重试，避免首页长期缺少缓存书封面。
 - 阅读页进入时恢复系统配置的抗锯齿与字重。切换书内字体时，等待新章节重新排版成功后再保存选择；内存不足或后台任务启动失败时显示明确提示，并记录切换结果日志。
-- 本条记录的是源码改动，不代表设备验收已完成。请在目标 S31 固件上确认首页封面显示、字体切换和正文边缘效果。
+- 异常启动时先用内建字体安全显示首屏；首屏成功且启动记录保存后解除全局字体/封面限制，同时保留中断书籍的单书隔离。用户在 S31 上复测“首页拔 USB、锁屏再解锁”，本轮未复现封面与字体丢失。
 
 - On the home page, reopening a recently read WeRead cached book requests its cover again; failed cover jobs retry instead of leaving a permanent blank.
 - The reader reapplies the configured antialiasing and weight on entry. Embedded-font selection is saved only after the chapter is successfully re-typeset; allocation or task-start failures show a message and the outcome is logged.
-- This entry records source changes, not completed device acceptance. Verify home covers, font switching, and text edges on the target S31 firmware.
+- After an abnormal start, the firmware uses the built-in face for a safe first frame. Once that frame and startup checkpoint succeed, it releases global font/cover restrictions while retaining quarantine for an interrupted book. The user retested unplugging USB from Home and locking/unlocking on S31; the cover/font loss did not reproduce.
 
 ## Metalio S31 0.3.3-rc113 — 2026-11-12
 
