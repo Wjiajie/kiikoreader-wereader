@@ -4,6 +4,8 @@
 
 - 新增 Metalio S31 `0.3.3-rc113` 完整固件安装包、SHA-256 校验文件和 Windows 刷写说明。包内含 bootloader、分区表、应用固件和 OTA 数据镜像；刷写命令不擦除用户数据分区。
 - Added the Metalio S31 `0.3.3-rc113` full firmware installation bundle, SHA-256 checksum, and Windows flashing guide. It includes bootloader, partition table, application, and OTA data images; the command does not erase user-data partitions.
+- 新增完整 16 MiB 原始闪存镜像及压缩下载包。该镜像从 `0x0` 写入会清除所有现有数据，说明中明确区分保数据安装包与整片镜像。
+- Added the complete 16 MiB raw flash image and compressed download. Flashing this image at `0x0` erases existing data; the guide distinguishes it from the data-preserving installer.
 
 ## 源码更新 / Source update — 2026-11-15
 

@@ -41,7 +41,7 @@ python tools/build_firmware.py --board metalio47 --idf-metalio47 "$IDF_PATH" --p
 
 ## 完整固件刷写包
 
-Metalio S31 0.3.3-rc113 完整刷写包与 Windows 使用说明见 [`firmware/metalio47/0.3.3-rc113/`](firmware/metalio47/0.3.3-rc113/)。该包包含固件安装所需的四个镜像，不会擦除整片闪存或覆盖用户数据分区。
+Metalio S31 0.3.3-rc113 完整刷写包与 Windows 使用说明见 [`firmware/metalio47/0.3.3-rc113/`](firmware/metalio47/0.3.3-rc113/)。目录中有保留用户数据的多镜像安装包，也有会覆盖整片闪存、清除用户数据的 16 MiB 原始镜像，请按说明选择。
 
 ## 许可
 
