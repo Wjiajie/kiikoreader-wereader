@@ -501,6 +501,7 @@ static bool s_book_fonts_applied;
 // The font switch needs the current chapter re-typeset, but not from the touch callback: the
 // stack there is too deep.
 static bool s_fonts_reload_pending;
+static bool s_book_fonts_pending_value;
 // 只计用户主动换字体后的实际回退，每次选择最多记一次；预览和后台重试不计数。
 // Count actual fallbacks after explicit choices once each, excluding preview loads and background retries.
 // S31同次开书累计手动与运行时回退，正常恢复后再次回退视为新的一次。
@@ -3017,7 +3018,8 @@ static void draw_font_settings(uint8_t* fb) {
     draw_font_pair(fb, s_weight_card, "字重", weight_value);
     const EpdRect toggles[]={s_bookfont_card,s_layout_card};
     const char*const labels[]={"书内自带字体","抗锯齿"};
-    const bool enabled[]={app_settings_book_fonts(),app_settings_book_antialias()};
+    const bool enabled[]={s_fonts_reload_pending?s_book_fonts_pending_value:app_settings_book_fonts(),
+                          app_settings_book_antialias()};
     for(unsigned i=0;i<2;++i){EpdRect card=toggles[i];int cy=card.y+card.height/2;
         ui_fill_round_rect(fb,card,20,UI_GRAY_WHITE);ui_draw_control_frame(fb,card,20,0x70);
         ui_text_fixed_vc(fb,card.x+21,cy,23,labels[i],EPD_DRAW_ALIGN_LEFT,false);
@@ -4708,6 +4710,7 @@ static size_t current_toc_position(void) {
 }
 static void render(app_ctx_t* ctx, uint8_t* fb) {
     lock_draw();
+    if(s_view==READING)ttf_set_antialias(app_settings_book_antialias());
 #if KIIKO_BOARD_METALIO47
 #endif
     ui_text_set_system_scale(s_view != READING);
@@ -5830,6 +5833,8 @@ static bool open_book_impl(app_ctx_t* ctx, const char* path) {
     if (err == ESP_OK) {
         s_book_fonts_applied = app_settings_book_fonts();
         book_set_embedded_fonts(s_book_fonts_applied);
+        ESP_LOGI(TAG,"reader typography font=%s antialias=%u embedded=%u",
+                 ttf_font_path(),(unsigned)ttf_get_antialias(),(unsigned)s_book_fonts_applied);
     }
     if (err != ESP_OK) {
         pending_progress_t* pending = pending_find(path);
@@ -7118,14 +7123,21 @@ static app_redraw_t select_reading_font_item(app_ctx_t* ctx, const ttf_font_item
     if (ttf_font_ready() && !strcmp(ttf_font_path(), item->path) &&
             !strcmp(app_settings_font_path(), item->path)) return APP_REDRAW_NONE;
     reader_font_job_t *job = calloc(1, sizeof(*job));
-    if (!job) return APP_REDRAW_NONE;
+    if (!job) {
+        copy_text(s_reader_notice,sizeof(s_reader_notice),"字体切换失败，内存不足");
+        s_reader_notice_until=esp_timer_get_time()/1000+2200;
+        return APP_REDRAW_PAGE;
+    }
     copy_text(job->path, sizeof(job->path), item->path);
     atomic_init(&job->cancel, false); atomic_init(&job->done, false);
     reader_font_choice_begin(item->path);
     s_font_job = job;
     if (xTaskCreate(reader_font_worker, "reader_font", 12288, job, 1, NULL) != pdPASS) {
         s_font_job = NULL; free(job); s_font_choice_pending = false;
-        return APP_REDRAW_NONE;
+        copy_text(s_reader_notice,sizeof(s_reader_notice),"字体切换启动失败，请重试");
+        s_reader_notice_until=esp_timer_get_time()/1000+2200;
+        ESP_LOGW(TAG,"reader font switch start failed path=%s",item->path);
+        return APP_REDRAW_PAGE;
     }
     return APP_REDRAW_PAGE;
 #else
@@ -7180,6 +7192,8 @@ static app_redraw_t reader_font_reload_tick(app_ctx_t *ctx) {
         ok = !strcmp(app_settings_font_path(), job->path);
         if (!ok) failure = "字体保存失败，请重试";
     }
+    ttf_set_stroke_adjust_fine(app_settings_book_weight_fine());
+    ttf_set_antialias(app_settings_book_antialias());
     if (!ok && published) {
         // 旧字体直到新排版和持久化均成功才释放；失败交换回旧对象。
         // Retain the old face through layout/persistence; swap it back on failure.
@@ -7195,6 +7209,8 @@ static app_redraw_t reader_font_reload_tick(app_ctx_t *ctx) {
         copy_text(s_reader_notice, sizeof(s_reader_notice), ok ? "" : failure);
         if (!ok) s_reader_notice_until = esp_timer_get_time() / 1000 + 2200;
     }
+    if(ok)ESP_LOGI(TAG,"reader font switch complete path=%s antialias=%u",job->path,(unsigned)ttf_get_antialias());
+    else ESP_LOGW(TAG,"reader font switch failed path=%s error=%s",job->path,esp_err_to_name(job->error));
     ttf_font_prepared_free(job->prepared);
     unlock_draw();
     free(job);
@@ -7639,8 +7655,7 @@ static app_redraw_t reader_panel_action(app_ctx_t* ctx, uint16_t x, uint16_t y) 
             // overran the main task stack (measured once). Record the intent and let the next
             // on_tick do it on a shallow stack.
             bool on = !app_settings_book_fonts();
-            app_settings_set_book_fonts(on);
-            s_book_fonts_applied = on;
+            s_book_fonts_pending_value = on;
             book_set_embedded_fonts(on);
             s_fonts_reload_pending = true;
             invalidate_prep();
@@ -9468,8 +9483,19 @@ static app_redraw_t on_tick(app_ctx_t* ctx) {
     // chapter from there overran the main task stack (measured).
     if (s_fonts_reload_pending) {
         s_fonts_reload_pending = false;
-        if (s_text && book_kind() == BOOK_KIND_EPUB)
-            (void)load_chapter(ctx, s_chapter, book_layout_page_start_offset(s_page), false);
+        const bool on=s_book_fonts_pending_value;
+        const size_t offset=book_layout_page_start_offset(s_page);
+        const bool needs_reload=s_text&&book_kind()==BOOK_KIND_EPUB;
+        const bool ok=!needs_reload||load_chapter(ctx,s_chapter,offset,false);
+        if(ok){
+            app_settings_set_book_fonts(on);
+            s_book_fonts_applied=on;
+        }else{
+            book_set_embedded_fonts(s_book_fonts_applied);
+            copy_text(s_reader_notice,sizeof(s_reader_notice),"切换书内字体失败，已恢复原设置");
+            s_reader_notice_until=ctx->now_ms+2500;
+            ESP_LOGW(TAG,"embedded font toggle failed chapter=%u requested=%u",(unsigned)s_chapter,(unsigned)on);
+        }
         return APP_REDRAW_PAGE;
     }
     if (s_view != READING || (s_toolbar && s_reader_panel != READER_PANEL_TOOLS) || s_clear_confirm || ctx->consumed) s_reader_tap.pending = false;

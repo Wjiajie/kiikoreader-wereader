@@ -1,5 +1,6 @@
 #if defined(KIIKO_LOCAL_LATENCY) || KIIKO_BOARD_METALIO47
 #if KIIKO_BOARD_METALIO47
+#include "esp_log.h"
 #ifdef ESP_PLATFORM
 #include "ui_locale_format.h"
 #endif
@@ -114,6 +115,7 @@ static EXT_RAM_BSS_ATTR home_cover_cache_t s_cover_cache[7];
 #define HOME_COVER_RESERVE (512u * 1024u)
 static int s_cover_next;
 static bool s_scan_pending;
+static int64_t s_cover_retry_ms;
 static bool s_books_cache_valid;
 static bool s_cached_sd_present;
 static bool s_cached_sd_mounted;
@@ -382,10 +384,20 @@ static bool load_cover(home_book_t *item,int slot) {
     if(!s_cover_generation)s_cover_generation=book_cover_jobs_begin();
     if(!book_cover_jobs_submit(s_cover_generation,slot,&request)){
         s_cover_generation=book_cover_jobs_begin();
-        if(!book_cover_jobs_submit(s_cover_generation,slot,&request))return false;
+        if(!book_cover_jobs_submit(s_cover_generation,slot,&request)){
+            ESP_LOGW("home_cover","cover submit failed slot=%d",slot);
+            s_cover_retry_ms=esp_timer_get_time()/1000+5000;
+            return false;
+        }
     }
     book_cover_result_t result={0};int state=book_cover_jobs_take(s_cover_generation,slot,&result);
-    if(!state){s_cover_waiting=true;return false;}if(state<0)return false;
+    if(!state){s_cover_waiting=true;return false;}
+    if(state<0){
+        ESP_LOGW("home_cover","cover job failed slot=%d",slot);
+        s_cover_generation=book_cover_jobs_begin();
+        s_cover_retry_ms=esp_timer_get_time()/1000+5000;
+        return false;
+    }
     home_cover_cache_t *cached=&s_cover_cache[slot];free(cached->pixels);
     snprintf(cached->path,sizeof(cached->path),"%s",item->path);
     snprintf(cached->title,sizeof(cached->title),"%s",item->title);
@@ -393,6 +405,7 @@ static bool load_cover(home_book_t *item,int slot) {
     cached->size=result.size;cached->modified=result.modified;cached->pixels=result.pixels;
     cached->fast=result.fast;cached->width=result.width;cached->height=result.height;
     item->cover=result.pixels;item->cover_fast=result.fast;item->cover_width=result.width;item->cover_height=result.height;
+    s_cover_retry_ms=0;
     return true;
 }
 
@@ -885,6 +898,9 @@ static void on_enter(app_ctx_t *ctx) {
     app_book_home_shelf_warm_stop();s_shelf_warm_next=0;s_shelf_warm_after=ctx->now_ms+1200;
     s_component_dirty=(EpdRect){0};
     s_cover_generation=book_cover_jobs_begin();
+    // A newly resumed book must get its own featured-cover request even when the prior visit
+    // already advanced the cursor past the first card.
+    s_cover_next=0;s_cover_waiting=false;s_cover_retry_ms=0;
     const uint32_t progress_revision=book_progress_revision();
     s_clock_base_attempted=false;clock_base_prepare();
 #if KIIKO_BOARD_METALIO47
@@ -948,9 +964,9 @@ static app_redraw_t on_tick(app_ctx_t *ctx) {
         s_avatar_ready=state==UI_AVATAR_READY;
         if(s_avatar_ready&&s_view==HOME_ROOT){s_area=(EpdRect){588,88,60,60};return APP_REDRAW_AREA;}
     }
-        if(s_view==HOME_ROOT&&s_cover_next==0){
+        if(s_view==HOME_ROOT&&s_cover_next==0&&ctx->now_ms>=s_cover_retry_ms){
             s_cover_next=1;home_book_t *b=featured();
-            if(b->path[0]&&!b->cover){int slot=b==&s_current?0:(int)(b-s_recent)+1;if(load_cover(b,slot)){s_area=(EpdRect){60,278,176,240};return APP_REDRAW_AREA;}if(s_cover_waiting)s_cover_next=0;}
+            if(b->path[0]&&!b->cover){int slot=b==&s_current?0:(int)(b-s_recent)+1;if(load_cover(b,slot)){s_area=(EpdRect){60,278,176,240};return APP_REDRAW_AREA;}if(s_cover_waiting||s_cover_retry_ms)s_cover_next=0;}
         }
     }
     if(s_view==HOME_COMPONENT&&s_component_pending){s_area=s_component_dirty;return APP_REDRAW_AREA;}

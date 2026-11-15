@@ -130,10 +130,12 @@ bool app_font_activate_system(void) {
 
 bool app_font_activate_reading(void) {
     s_reading = true;
-    ttf_set_stroke_adjust_fine(app_settings_book_weight_fine());
-    ttf_set_antialias(app_settings_book_antialias());
     const char* saved = pico_boot_recovery() ? TTF_FONT_BUILTIN : app_settings_font_path();
     bool changed = activate(ttf_font_path_is_builtin(saved) ? TTF_FONT_BUILTIN : saved);
+    // Reapply reader rendering preferences after font activation so page entry cannot inherit
+    // temporary system-font or font-preview state.
+    ttf_set_stroke_adjust_fine(app_settings_book_weight_fine());
+    ttf_set_antialias(app_settings_book_antialias());
     ui_text_set_system_font(false);
     ui_text_set_system_scale(false);
     ui_nav_status_font_context(true, changed);
