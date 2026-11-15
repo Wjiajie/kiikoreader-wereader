@@ -1,3 +1,3 @@
-0a9715e3bd6b8fdf636b22a3530236c4e639ed70cdb2082b2220d22a87f091c2  kiikoread-metalio47-0.3.3-rc113-full-flash.zip
-b9fb420b40d7ff4034d9dd07c3ab72bb307a83dfd0df75a6785e350c2af4ee25  kiikoread-metalio47-0.3.3-rc113-full-flash-16MB.bin
-50e7627ebb856a2c6a061585e08c3ac22928c0cda46c192d9e760d06bcaf23fb  kiikoread-metalio47-0.3.3-rc113-full-flash-16MB.zip
+4373dbe347e187517ca3d3b32f630f992bdbcf414250b741bbb0cc56dc0f9e80  kiikoread-metalio47-0.3.3-rc113-full-flash.zip
+cad7483bfdbb7f6533a6b11914f3ad8f3fbfe0882b40cadfc3c073c444838852  kiikoread-metalio47-0.3.3-rc113-full-flash-16MB.bin
+ead8e4bf2d94025ed528d1e097c60f16aa4f70e77026b830fe0e4ad24ec9a659  kiikoread-metalio47-0.3.3-rc113-full-flash-16MB.zip

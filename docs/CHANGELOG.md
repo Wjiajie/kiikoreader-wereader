@@ -6,6 +6,8 @@
 - Added the Metalio S31 `0.3.3-rc113` full firmware installation bundle, SHA-256 checksum, and Windows flashing guide. It includes bootloader, partition table, application, and OTA data images; the command does not erase user-data partitions.
 - 新增完整 16 MiB 原始闪存镜像及压缩下载包。该镜像从 `0x0` 写入会清除所有现有数据，说明中明确区分保数据安装包与整片镜像。
 - Added the complete 16 MiB raw flash image and compressed download. Flashing this image at `0x0` erases existing data; the guide distinguishes it from the data-preserving installer.
+- 微信读书缓存任务临时关闭 Wi-Fi 省电并在结束后恢复，新增 HTTP 请求与整本任务耗时日志；构建已完成，实机速度收益待验证。
+- During WeRead book caching, temporarily disable Wi-Fi power saving and restore it at task completion; add per-request and whole-task timing logs. Build completed; on-device speed gains remain to be measured.
 
 ## 源码更新 / Source update — 2026-11-15
 

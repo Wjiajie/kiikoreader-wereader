@@ -419,6 +419,7 @@ static bool report_display_busy(void) {
 static char *http_request(const char *url, const char *body, const char *referer, size_t limit,
                           size_t *length, wr_http_chunk_fn chunk, void *context,
                           bool *fields_received, bool *post_started) {
+    const int64_t request_started_us = esp_timer_get_time();
     s_http_open_failed = false;
     if (wr_cancelled()) { s_error_message = "操作已取消"; return NULL; }
     if (!wr_online()) { s_error_message = "Wi-Fi 未连接或网络尚未就绪"; return NULL; }
@@ -610,7 +611,8 @@ cleanup:
         free(data); return NULL;
     }
     data[used] = 0;
-    ESP_LOGI("WEREAD", "HTTP complete url=%s bytes=%u", url, (unsigned)used);
+    ESP_LOGI("WEREAD", "HTTP complete url=%s bytes=%u elapsed_ms=%lld", url, (unsigned)used,
+             (long long)((esp_timer_get_time()-request_started_us)/1000));
     if (length) *length = used;
     return data;
 }
@@ -1160,7 +1162,13 @@ bool wr_logout(bool remove_books) {
 
 static void run_work(const wr_work_t *work) {
     char path[WR_PATH];
+    const int64_t work_started_us = esp_timer_get_time();
     bool ok = false;
+    const bool cache_radio_boost = work->kind == WR_CACHE && wr_online();
+    if (cache_radio_boost) {
+        radio_hold(true);
+        ESP_LOGI("WEREAD", "cache radio performance mode enabled");
+    }
     if (work->kind == WR_LOGIN) s_report_fields.expires = 0;
     ESP_LOGI("WEREAD", "work start kind=%d internal_free=%u largest=%u", work->kind,
              (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
@@ -1215,14 +1223,19 @@ static void run_work(const wr_work_t *work) {
         s_error_message = "登录已失效，请重新扫码";
         s_expired = true;
     }
+    if (cache_radio_boost) {
+        radio_hold(false);
+        ESP_LOGI("WEREAD", "cache radio performance mode restored");
+    }
     if (s_expired && s_http_account.token[0]) {
         memset(s_http_account.token, 0, sizeof(s_http_account.token));
         (void)save_account(&s_http_account);
     }
     memset(&s_http_account, 0, sizeof(s_http_account));
     memset(s_cookies, 0, sizeof(s_cookies));
-    ESP_LOGI("WEREAD","work done kind=%d ok=%d canceled=%d stack_hwm=%u internal_free=%u psram_free=%u",
-             work->kind,ok,wr_cancelled(),(unsigned)uxTaskGetStackHighWaterMark(NULL),
+    ESP_LOGI("WEREAD","work done kind=%d ok=%d canceled=%d elapsed_ms=%lld stack_hwm=%u internal_free=%u psram_free=%u",
+             work->kind,ok,wr_cancelled(),(long long)((esp_timer_get_time()-work_started_us)/1000),
+             (unsigned)uxTaskGetStackHighWaterMark(NULL),
              (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT),
              (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT));
     portENTER_CRITICAL(&s_lock);
