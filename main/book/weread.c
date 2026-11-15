@@ -24,6 +24,7 @@
 #include "esp_random.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "nvs.h"
 #include "read_pico_sd.h"
@@ -66,19 +67,31 @@ static bool s_work_pending;
 static bool s_processing_report;
 static bool s_reader_scanning;
 static int64_t s_reader_scan_end;
+static esp_http_client_handle_t s_http_keepalive;
+static char s_http_keepalive_host[128];
 static struct {
     wr_report_t account_book;
     char chapter[WR_ID];
     wr_reader_t fields;
     int64_t expires;
 } s_report_fields;
-// HTTP 请求在同一后台任务中串行运行。/ HTTP requests run serially on the same worker.
-static EXT_RAM_BSS_ATTR struct {
+// Each HTTP request owns redirect and cookie-capture state, so bounded cache
+// prefetch requests can overlap without corrupting one another.
+typedef struct {
     char absolute[WR_HTTP_URL_BYTES];
     char redirected[WR_HTTP_URL_BYTES];
     char location[WR_HTTP_URL_BYTES];
     char current[WR_HTTP_URL_BYTES];
-} s_http_url;
+    char cookie_snapshot[1024];
+    bool capture_service_cookies;
+    bool capture_body;
+    bool body_overflow;
+    bool *post_started;
+    size_t body_limit, body_used, body_capacity;
+    char *body_data;
+} wr_http_context_t;
+static StaticSemaphore_t s_cookie_mutex_storage;
+static SemaphoreHandle_t s_cookie_mutex;
 static wr_result_t s_result;
 static wr_job_t s_active_job;
 static atomic_bool s_cancel;
@@ -86,9 +99,9 @@ static unsigned s_done, s_total;
 static char s_qr[180];
 static wr_account_t s_http_account;
 static char s_cookies[1024];
-static bool s_expired;
-static bool s_http_open_failed;
-static const char *s_error_message = "操作失败，请检查网络后重试";
+static _Atomic bool s_expired;
+static _Atomic bool s_http_open_failed;
+static _Atomic(const char *) s_error_message = "操作失败，请检查网络后重试";
 static const char *s_result_message = "操作失败，请检查网络后重试";
 /* 阅读会话归属于开书时的账号：统计与上报都用这份快照，切号后不会写到新账号。
  * A reading session belongs to the account that opened the book; reports and stats use
@@ -104,9 +117,12 @@ static struct {
 static bool s_radio_held;
 
 static void restore_session_cookie(void);
+static bool wr_url_allowed(const char *url, bool service);
+static bool cover_redirect_url(const char *current, const char *location,
+                               char out[WR_HTTP_URL_BYTES]);
 
-const char *wr_error_message(void) { return s_error_message; }
-void wr_error_set(const char *message) { if (message && *message) s_error_message = message; }
+const char *wr_error_message(void) { return atomic_load(&s_error_message); }
+void wr_error_set(const char *message) { if (message && *message) atomic_store(&s_error_message, message); }
 const char *wr_result_message(void) {
     portENTER_CRITICAL(&s_lock);
     const char *message = s_result_message;
@@ -140,6 +156,14 @@ static void save_session_cookies(void) {
     if (nvs_open("weread", NVS_READWRITE, &nvs) != ESP_OK) return;
     if (nvs_set_str(nvs, "cookies", s_cookies) == ESP_OK) (void)nvs_commit(nvs);
     nvs_close(nvs);
+}
+
+static void cookie_lock(void) {
+    if (s_cookie_mutex) (void)xSemaphoreTake(s_cookie_mutex, portMAX_DELAY);
+}
+
+static void cookie_unlock(void) {
+    if (s_cookie_mutex) (void)xSemaphoreGive(s_cookie_mutex);
 }
 
 static bool clear_session_cookies(void) {
@@ -282,17 +306,19 @@ bool wr_reader_fields_cached(const char *book, const char *chapter, wr_reader_t 
 }
 
 static esp_err_t capture_cookie(esp_http_client_event_t *event) {
+    wr_http_context_t *context = event->user_data;
+    if (!context) return ESP_OK;
     if (event->event_id != HTTP_EVENT_ON_HEADER || !event->header_key || !event->header_value) return ESP_OK;
     if (!strcasecmp(event->header_key,"Location")) {
         size_t n = strnlen(event->header_value, WR_HTTP_URL_BYTES);
         if (n && n < WR_HTTP_URL_BYTES) {
-            memcpy(s_http_url.location,event->header_value,n);
-            s_http_url.location[n]=0;
+            memcpy(context->location,event->header_value,n);
+            context->location[n]=0;
         }
         return ESP_OK;
     }
     if (strcasecmp(event->header_key,"Set-Cookie") ||
-        !event->user_data || !*(const bool *)event->user_data) return ESP_OK;
+        !context->capture_service_cookies) return ESP_OK;
     const char *header = event->header_value;
     const char *equals = strchr(header,'=');
     if (!equals || strncmp(header,"wr_",3) || equals-header > 24) return ESP_OK;
@@ -301,6 +327,7 @@ static esp_err_t capture_cookie(esp_http_client_event_t *event) {
     for (size_t i = 0; i < len; ++i) {
         if ((unsigned char)header[i] <= ' ' || (unsigned char)header[i] >= 127) return ESP_OK;
     }
+    cookie_lock();
     char *p = s_cookies;
     while (*p) {
         char *end = strstr(p,"; ");
@@ -320,25 +347,242 @@ static esp_err_t capture_cookie(esp_http_client_event_t *event) {
         s_cookies[used+len]=0;
         save_session_cookies();
     }
+    cookie_unlock();
     return ESP_OK;
 }
 
+static void http_keepalive_drop(void) {
+    if (s_http_keepalive) {
+        esp_http_client_cleanup(s_http_keepalive);
+        s_http_keepalive = NULL;
+    }
+    s_http_keepalive_host[0] = 0;
+}
+
+static esp_err_t capture_keepalive_event(esp_http_client_event_t *event) {
+    wr_http_context_t *request = event ? event->user_data : NULL;
+    if (!request) return ESP_OK;
+    if (event->event_id == HTTP_EVENT_HEADERS_SENT && request->post_started) {
+        *request->post_started = true;
+    }
+    if (event->event_id == HTTP_EVENT_ON_DATA && request->capture_body) {
+        if (wr_cancelled()) return ESP_FAIL;
+        if (event->data_len < 0 || (size_t)event->data_len > request->body_limit - request->body_used) {
+            request->body_overflow = true;
+            return ESP_FAIL;
+        }
+        size_t needed = request->body_used + (size_t)event->data_len;
+        if (needed > request->body_capacity) {
+            size_t next = request->body_capacity ? request->body_capacity : 4096;
+            while (next < needed) {
+                size_t grown = next <= request->body_limit / 2 ? next * 2 : request->body_limit;
+                if (grown <= next) { next = needed; break; }
+                next = grown;
+            }
+            if (next > request->body_limit) next = request->body_limit;
+            char *data = heap_caps_realloc(request->body_data, next + 1,
+                                           MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+            if (!data) return ESP_ERR_NO_MEM;
+            request->body_data = data;
+            request->body_capacity = next;
+        }
+        if (event->data_len) {
+            memcpy(request->body_data + request->body_used, event->data, (size_t)event->data_len);
+            request->body_used += (size_t)event->data_len;
+        }
+        return ESP_OK;
+    }
+    return capture_cookie(event);
+}
+
+static bool http_url_host(const char *url, char host[128]) {
+    if (!url || strncmp(url, "https://", 8)) return false;
+    const char *start = url + 8;
+    const char *end = strpbrk(start, "/?#");
+    if (!end) end = start + strlen(start);
+    size_t length = (size_t)(end - start);
+    if (!length || length >= 128) return false;
+    memcpy(host, start, length);
+    host[length] = 0;
+    return true;
+}
+
+static esp_http_client_handle_t http_keepalive_get(const char *url, wr_http_context_t *request) {
+    char host[128];
+    if (!http_url_host(url, host)) return NULL;
+    if (s_http_keepalive && strcasecmp(host, s_http_keepalive_host)) http_keepalive_drop();
+    if (!s_http_keepalive) {
+        esp_http_client_config_t config = {
+            .url = url, .timeout_ms = 15000, .buffer_size = 4096, .buffer_size_tx = 2048,
+            .crt_bundle_attach = esp_crt_bundle_attach, .disable_auto_redirect = true,
+            .keep_alive_enable = true, .keep_alive_idle = 10, .keep_alive_interval = 5,
+            .keep_alive_count = 2, .user_agent = WR_AGENT,
+            .event_handler = capture_keepalive_event, .user_data = request,
+        };
+        s_http_keepalive = esp_http_client_init(&config);
+        if (!s_http_keepalive) return NULL;
+        snprintf(s_http_keepalive_host, sizeof(s_http_keepalive_host), "%s", host);
+    } else {
+        if (esp_http_client_set_url(s_http_keepalive, url) != ESP_OK ||
+            esp_http_client_set_event_handler(s_http_keepalive, capture_keepalive_event) != ESP_OK ||
+            esp_http_client_set_user_data(s_http_keepalive, request) != ESP_OK) return NULL;
+    }
+    return s_http_keepalive;
+}
+
+static char *http_request_reusable(wr_http_context_t *request, const char *url, const char *body,
+                                   const char *referer, size_t limit, size_t *length,
+                                   bool *post_started) {
+    request->capture_body = true;
+    request->body_limit = limit;
+    request->post_started = post_started;
+    request->capture_service_cookies = url[0] == '/';
+    bool service = request->capture_service_cookies;
+    char *absolute = request->absolute;
+    const bool upgrade = !service && !strncmp(url, "http://", 7);
+    const char *prefix = service ? WR_HOST : upgrade ? "https://" : "";
+    int n = snprintf(absolute, WR_HTTP_URL_BYTES, "%s%s", prefix, upgrade ? url + 7 : url);
+    if (n < 0 || n >= WR_HTTP_URL_BYTES || (!service && !wr_url_allowed(absolute, false))) {
+        wr_error_set("微信读书请求地址无效");
+        return NULL;
+    }
+    for (const char *p = absolute; *p; ++p) {
+        if ((unsigned char)*p <= ' ' || *p == '\\') {
+            wr_error_set("微信读书请求地址无效");
+            return NULL;
+        }
+    }
+    cookie_lock();
+    memcpy(request->cookie_snapshot, s_cookies, sizeof(request->cookie_snapshot));
+    request->cookie_snapshot[sizeof(request->cookie_snapshot)-1] = 0;
+    cookie_unlock();
+
+    char request_host[128];
+    bool reused = http_url_host(absolute, request_host) && s_http_keepalive &&
+        !strcasecmp(request_host, s_http_keepalive_host);
+    esp_http_client_handle_t http = http_keepalive_get(absolute, request);
+    if (!http) { wr_error_set("无法创建网络请求"); http_keepalive_drop(); return NULL; }
+    esp_http_client_delete_all_headers(http);
+    esp_http_client_reset_redirect_counter(http);
+    esp_http_client_set_method(http, body ? HTTP_METHOD_POST : HTTP_METHOD_GET);
+    esp_http_client_set_header(http, "Accept-Encoding", "identity");
+    esp_http_client_set_header(http, "Referer", referer ? referer : WR_HOST "/");
+    if (service) {
+        esp_http_client_set_header(http, "Accept", "application/json, text/plain, */*");
+        esp_http_client_set_header(http, "Origin", WR_HOST);
+        if (request->cookie_snapshot[0])
+            esp_http_client_set_header(http, "Cookie", request->cookie_snapshot);
+    }
+    int body_size = body ? (int)strlen(body) : 0;
+    if (body) esp_http_client_set_header(http, "Content-Type", "application/json;charset=UTF-8");
+    if (esp_http_client_set_post_field(http, body, body_size) != ESP_OK) {
+        wr_error_set("无法准备微信读书请求");
+        http_keepalive_drop();
+        return NULL;
+    }
+    int64_t started = esp_timer_get_time();
+    int code = 0;
+    for (unsigned redirects = 0;;) {
+        request->location[0] = 0;
+        free(request->body_data);
+        request->body_data = NULL;
+        request->body_used = request->body_capacity = 0;
+        request->body_overflow = false;
+        snprintf(request->current, sizeof(request->current), "%s", absolute);
+        if (wr_cancelled()) { wr_error_set("操作已取消"); http_keepalive_drop(); return NULL; }
+        esp_err_t result = esp_http_client_perform(http);
+        if (result != ESP_OK) {
+            int tls_code = 0, tls_flags = 0;
+            esp_err_t tls_error = esp_http_client_get_and_clear_last_tls_error(http, &tls_code, &tls_flags);
+            if (request->body_overflow) wr_error_set("微信读书响应超出允许大小");
+            else if (wr_cancelled()) wr_error_set("操作已取消");
+            else if (tls_error != ESP_OK || result == ESP_ERR_HTTP_CONNECT) {
+                s_http_open_failed = true;
+                wr_error_set("微信读书网络连接失败，请检查 Wi-Fi 后重试");
+            } else wr_error_set("读取微信读书响应失败");
+            ESP_LOGW("WEREAD", "HTTP perform failed url=%s err=%s tls=%s code=%d flags=0x%x bytes=%u",
+                     url, esp_err_to_name(result), esp_err_to_name(tls_error), tls_code,
+                     (unsigned)tls_flags, (unsigned)request->body_used);
+            free(request->body_data);
+            request->body_data = NULL;
+            http_keepalive_drop();
+            return NULL;
+        }
+        code = esp_http_client_get_status_code(http);
+        if (code == 401 || code == 403) {
+            if (service) { s_expired = true; wr_error_set("登录已失效，请重新扫码"); }
+            else wr_error_set("微信读书图片请求未获授权");
+        } else if (code < 200 || code >= 300) wr_error_set("微信读书接口返回错误");
+        bool redirect = code == 301 || code == 302 || code == 303 || code == 307 || code == 308;
+        if (!redirect) break;
+        if (redirects++ >= 5) { wr_error_set("微信读书接口重定向次数过多"); http_keepalive_drop(); return NULL; }
+        char redirected[WR_HTTP_URL_BYTES];
+        if (!service) {
+            if (!cover_redirect_url(request->current, request->location, redirected) ||
+                !wr_url_allowed(redirected, false) || esp_http_client_set_url(http, redirected) != ESP_OK) {
+                wr_error_set("微信读书图片重定向地址不受支持");
+                http_keepalive_drop();
+                return NULL;
+            }
+        } else {
+            if (esp_http_client_set_redirection(http) != ESP_OK ||
+                esp_http_client_get_url(http, redirected, sizeof(redirected)) != ESP_OK ||
+                !wr_url_allowed(redirected, true)) {
+                wr_error_set("微信读书接口重定向失败");
+                http_keepalive_drop();
+                return NULL;
+            }
+        }
+        ESP_LOGI("WEREAD", "HTTP redirect %s -> %s", url, redirected);
+        snprintf(absolute, WR_HTTP_URL_BYTES, "%s", redirected);
+        if (code == 301 || code == 302 || code == 303) {
+            esp_http_client_set_method(http, HTTP_METHOD_GET);
+            esp_http_client_set_post_field(http, NULL, 0);
+            body_size = 0;
+        }
+        free(request->body_data);
+        request->body_data = NULL;
+    }
+    if (code != 200 || !request->body_data) {
+        if (code == 200 && !request->body_data && request->body_used == 0) {
+            request->body_data = heap_caps_malloc(1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        }
+        if (code != 200 || !request->body_data) {
+            free(request->body_data);
+            request->body_data = NULL;
+            http_keepalive_drop();
+            return NULL;
+        }
+    }
+    request->body_data[request->body_used] = 0;
+    if (length) *length = request->body_used;
+    ESP_LOGI("WEREAD", "HTTP complete url=%s bytes=%u elapsed_ms=%lld connection_reused=%d",
+             request->current, (unsigned)request->body_used,
+             (long long)((esp_timer_get_time() - started) / 1000), reused);
+    char *result = request->body_data;
+    request->body_data = NULL;
+    return result;
+}
+
 static void restore_session_cookie(void) {
-    if (s_cookies[0]) return;
+    cookie_lock();
+    if (s_cookies[0]) { cookie_unlock(); return; }
     nvs_handle_t nvs;
     if (nvs_open("weread", NVS_READONLY, &nvs) == ESP_OK) {
         size_t size = sizeof(s_cookies);
         if (nvs_get_str(nvs, "cookies", s_cookies, &size) == ESP_OK && s_cookies[0]) {
             nvs_close(nvs);
+            cookie_unlock();
             return;
         }
         nvs_close(nvs);
     }
     wr_account_t account;
-    if (!read_account(&account) || !account.owner[0] || !account.token[0]) return;
+    if (!read_account(&account) || !account.owner[0] || !account.token[0]) { cookie_unlock(); return; }
     /* CrossMux persists the same three WeRead cookies across reboot.  QR login
      * gives us the vid and skey; rebuild the durable pair before shelf calls. */
     snprintf(s_cookies, sizeof(s_cookies), "wr_vid=%s; wr_skey=%s", account.owner, account.token);
+    cookie_unlock();
 }
 
 static bool wr_url_allowed(const char *url, bool service) {
@@ -361,6 +605,24 @@ static bool wr_url_allowed(const char *url, bool service) {
         if (n>suffix && !strncasecmp(end-suffix,suffixes[i],suffix)) return true;
     }
     return false;
+}
+
+static void log_rejected_image_url(const char *url) {
+    const char *scheme = url ? strstr(url, "://") : NULL;
+    const char *host = scheme ? scheme + 3 : (url ? url : "");
+    const char *end = strpbrk(host, "/?#");
+    if (!end) end = host + strlen(host);
+    char safe_host[128];
+    size_t length = (size_t)(end - host);
+    if (length >= sizeof(safe_host)) length = sizeof(safe_host) - 1;
+    for (size_t i = 0; i < length; ++i) {
+        unsigned char c = (unsigned char)host[i];
+        safe_host[i] = (isalnum(c) || c == '.' || c == '-' || c == ':') ? (char)c : '?';
+    }
+    safe_host[length] = 0;
+    ESP_LOGW("WEREAD", "image URL rejected scheme=%s host=%s length=%u",
+             scheme ? (size_t)(scheme - url) == 5 ? "https" : (size_t)(scheme - url) == 4 ? "http" : "other" : "none",
+             safe_host, (unsigned)(url ? strlen(url) : 0));
 }
 
 /* Resolve WeRead CDN redirects ourselves. ESP-IDF rejects HTTPS -> HTTP
@@ -422,23 +684,36 @@ static char *http_request(const char *url, const char *body, const char *referer
     const int64_t request_started_us = esp_timer_get_time();
     s_http_open_failed = false;
     if (wr_cancelled()) { s_error_message = "操作已取消"; return NULL; }
-    if (!wr_online()) { s_error_message = "Wi-Fi 未连接或网络尚未就绪"; return NULL; }
+    if (!wr_online()) { http_keepalive_drop(); s_error_message = "Wi-Fi 未连接或网络尚未就绪"; return NULL; }
     if (url[0] == '/') restore_session_cookie();
-    char *absolute = s_http_url.absolute;
+    wr_http_context_t *request = heap_caps_calloc(1, sizeof(*request), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!request) { s_error_message = "内存不足，无法创建微信读书请求"; return NULL; }
+    char *absolute = request->absolute;
     const bool service = url[0] == '/';
-    bool capture_service_cookies = service;
+    request->capture_service_cookies = service;
     bool upgrade = !service && !strncmp(url, "http://", 7);
     const char *prefix = service ? WR_HOST : upgrade ? "https://" : "";
     int url_size = snprintf(absolute, WR_HTTP_URL_BYTES, "%s%s", prefix, upgrade ? url + 7 : url);
     if (url_size < 0 || url_size >= WR_HTTP_URL_BYTES) {
         s_error_message = "微信读书请求地址过长";
+        free(request);
         return NULL;
     }
     if (!service && !wr_url_allowed(absolute, false)) {
+        log_rejected_image_url(absolute);
         s_error_message="微信读书图片地址不受支持";
+        free(request);
         return NULL;
     }
-    for (const char *p = absolute; *p; ++p) if ((unsigned char)*p <= ' ' || *p == '\\') return NULL;
+    for (const char *p = absolute; *p; ++p) if ((unsigned char)*p <= ' ' || *p == '\\') { free(request); return NULL; }
+    cookie_lock();
+    memcpy(request->cookie_snapshot, s_cookies, sizeof(request->cookie_snapshot));
+    request->cookie_snapshot[sizeof(request->cookie_snapshot)-1] = 0;
+    cookie_unlock();
+    /* Keep the proven open/fetch/read path for complete responses. The experimental
+     * esp_http_client_perform() keep-alive path returned non-2xx during a real
+     * WeRead cache request; do not reuse it until the server response is diagnosed. */
+    http_keepalive_drop();
     esp_http_client_config_t config = {
         /* Keep the HTTP/TLS working set modest on S31: the panel and Wi-Fi
          * driver need internal RAM while mbedTLS allocates AES/GCM contexts. */
@@ -446,16 +721,16 @@ static char *http_request(const char *url, const char *body, const char *referer
         /* open/fetch_headers/read is the streaming API; it needs an explicit
          * redirect loop because perform() is not used here. */
         .crt_bundle_attach = esp_crt_bundle_attach, .disable_auto_redirect = true,
-        .user_agent = WR_AGENT, .event_handler = capture_cookie, .user_data = &capture_service_cookies,
+        .user_agent = WR_AGENT, .event_handler = capture_cookie, .user_data = request,
     };
     esp_http_client_handle_t http = esp_http_client_init(&config);
-    if (!http) { s_error_message = "无法创建网络请求"; return NULL; }
+    if (!http) { s_error_message = "无法创建网络请求"; free(request); return NULL; }
     esp_http_client_set_header(http, "Accept-Encoding", "identity");
     esp_http_client_set_header(http, "Referer", referer ? referer : WR_HOST "/");
     if (service) {
         esp_http_client_set_header(http,"Accept","application/json, text/plain, */*");
         esp_http_client_set_header(http,"Origin",WR_HOST);
-        if (s_cookies[0]) esp_http_client_set_header(http,"Cookie",s_cookies);
+        if (request->cookie_snapshot[0]) esp_http_client_set_header(http,"Cookie",request->cookie_snapshot);
     }
     if (body) {
         esp_http_client_set_method(http, HTTP_METHOD_POST);
@@ -472,9 +747,9 @@ static char *http_request(const char *url, const char *body, const char *referer
     int code = 0;
     int body_size = body ? (int)strlen(body) : 0;
     int64_t declared = -1;
-    snprintf(s_http_url.current, sizeof(s_http_url.current), "%s", absolute);
+    snprintf(request->current, sizeof(request->current), "%s", absolute);
     for (unsigned redirects = 0;;) {
-        s_http_url.location[0]=0;
+        request->location[0]=0;
         int64_t open_start = esp_timer_get_time();
         esp_err_t open_error = esp_http_client_open(http, body_size);
         if (open_error != ESP_OK) {
@@ -500,17 +775,17 @@ static char *http_request(const char *url, const char *body, const char *referer
         ESP_LOGI("WEREAD", "HTTP %s code=%d declared=%lld chunked=%d", url, code, (long long)declared,
                  (int)esp_http_client_is_chunked_response(http));
         bool redirect = code == 301 || code == 302 || code == 303 || code == 307 || code == 308;
-        char *redirected = s_http_url.redirected;
+        char *redirected = request->redirected;
         if (!redirect) break;
         if (redirects >= 5) { s_error_message="微信读书封面重定向次数过多"; goto cleanup; }
         if (!service) {
-            if (!cover_redirect_url(s_http_url.current,s_http_url.location,redirected)) {
-                ESP_LOGW("WEREAD","cover redirect invalid location='%s'",s_http_url.location);
+            if (!cover_redirect_url(request->current,request->location,redirected)) {
+                ESP_LOGW("WEREAD","cover redirect invalid location='%s'",request->location);
                 s_error_message = "微信读书图片重定向地址不受支持";
                 goto cleanup;
             }
             if (!wr_url_allowed(redirected,false) || esp_http_client_set_url(http,redirected)!=ESP_OK) {
-                ESP_LOGW("WEREAD","cover redirect target rejected location='%s' target='%s'",s_http_url.location,redirected);
+                ESP_LOGW("WEREAD","cover redirect target rejected location='%s' target='%s'",request->location,redirected);
                 s_error_message = "微信读书图片重定向地址不受支持";
                 goto cleanup;
             }
@@ -527,7 +802,7 @@ static char *http_request(const char *url, const char *body, const char *referer
             goto cleanup;
         }
         ESP_LOGI("WEREAD", "HTTP redirect %s -> %s", url, redirected);
-        snprintf(s_http_url.current,sizeof(s_http_url.current),"%s",redirected);
+        snprintf(request->current,sizeof(request->current),"%s",redirected);
         if (code == 301 || code == 302 || code == 303) {
             body_size = 0;
             esp_http_client_set_method(http, HTTP_METHOD_GET);
@@ -595,6 +870,7 @@ static char *http_request(const char *url, const char *body, const char *referer
     }
 cleanup:
     esp_http_client_cleanup(http);
+    free(request);
     if (chunk && (complete || *fields_received) && !wr_cancelled()) {
         *fields_received = true;
         ESP_LOGI("WEREAD", "reader HTML bytes=%u full_response=%d", (unsigned)used, complete);
@@ -1406,8 +1682,10 @@ static void worker_task(void *arg) {
         if (work) {
             // 发布完成前，WR_BUSY 保证任务参数不能被覆盖。/ WR_BUSY protects the job until its result is published.
             run_work(&s_work);
+            http_keepalive_drop();
         } else if (slot >= 0) {
             process_report((unsigned)slot, &report);
+            http_keepalive_drop();
         } else {
             ulTaskNotifyTake(pdTRUE, pending ? pdMS_TO_TICKS(500) : portMAX_DELAY);
         }
@@ -1416,6 +1694,11 @@ static void worker_task(void *arg) {
 
 void wr_init(void) {
     if (s_worker) return;
+    if (!s_cookie_mutex) s_cookie_mutex = xSemaphoreCreateMutexStatic(&s_cookie_mutex_storage);
+    if (!s_cookie_mutex) {
+        ESP_LOGE("WEREAD", "cookie mutex initialization failed");
+        return;
+    }
     s_worker = xTaskCreateStatic(worker_task, "weread", sizeof(s_worker_stack),
                                  NULL, 2, s_worker_stack, &s_worker_tcb);
     if (s_worker) ESP_LOGI("WEREAD", "worker ready stack=%u", (unsigned)sizeof(s_worker_stack));

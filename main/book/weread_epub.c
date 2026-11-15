@@ -16,12 +16,36 @@
 #include "esp_attr.h"
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
+#include "read_pico_sd_access.h"
 #include "zip_reader.h"
 #include "zlib.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
 typedef struct { FILE *file, *directory; uint16_t count; } epub_writer_t;
+
+static char *cache_fetch_chapter(const wr_book_t *book, const wr_chapter_t *chapter,
+                                 bool *plain, size_t *size, unsigned index) {
+    int64_t started = esp_timer_get_time();
+    wr_reader_t reader;
+    char *content = NULL;
+    for (unsigned attempt = 0; attempt < 3 && !content && !wr_cancelled(); ++attempt) {
+        if (wr_reader(book->id, chapter->id, &reader))
+            content = wr_chapter_content(book->id, chapter->id, &reader, plain, size);
+        if (!content && attempt < 2) vTaskDelay(pdMS_TO_TICKS(400u * (attempt + 1)));
+    }
+    if (!content) {
+        if (!wr_cancelled() && !strcmp(wr_error_message(), "操作失败，请检查网络后重试"))
+            wr_error_set("缓存失败：章节下载失败（已自动重试 3 次）");
+        ESP_LOGW("WEREAD", "cache fetch failed index=%u chapter=%s error=%s",
+                 index + 1, chapter->id, wr_error_message());
+        return NULL;
+    }
+    ESP_LOGI("WEREAD", "cache fetch index=%u bytes=%u elapsed_ms=%lld result=1",
+             index + 1, (unsigned)*size,
+             (long long)((esp_timer_get_time() - started) / 1000));
+    return content;
+}
 
 static void le16(uint8_t *dest, unsigned value) {
     dest[0] = value;
@@ -119,13 +143,17 @@ static bool image_entry(epub_writer_t *zip, FILE *opf, const char *src, size_t s
         else url[used++] = src[i];
     }
     url[used] = 0;
+    int64_t image_started = esp_timer_get_time();
     size_t length;
     char *data = NULL;
     for (unsigned attempt = 0; attempt < 3 && !data && !wr_cancelled(); ++attempt) {
         data = wr_http(url, NULL, NULL, 4*1024*1024, &length);
+        if (!data && !strcmp(wr_error_message(), "微信读书图片地址不受支持")) break;
         if (!data && attempt < 2) vTaskDelay(pdMS_TO_TICKS(350u * (attempt + 1)));
     }
     if (!data) {
+        ESP_LOGW("WEREAD", "cache image id=%u elapsed_ms=%lld result=0 error=%s", id,
+                 (long long)((esp_timer_get_time() - image_started) / 1000), wr_error_message());
         /* CrossMux treats embedded illustrations as best-effort: a transient
          * CDN failure must not discard otherwise complete chapter text. */
         name[0] = 0;
@@ -136,6 +164,8 @@ static bool image_entry(epub_writer_t *zip, FILE *opf, const char *src, size_t s
     bool ok = !ext || (zip_entry(zip, name, data, length) &&
         fprintf(opf, "<item id=\"i%u\" href=\"%s\" media-type=\"%s\"%s/>", id, name, mime,
                 id == 0 ? " properties=\"cover-image\"" : "") >= 0);
+    ESP_LOGI("WEREAD", "cache image id=%u bytes=%u elapsed_ms=%lld result=%d", id,
+             (unsigned)length, (long long)((esp_timer_get_time() - image_started) / 1000), ok);
     if (!ext) name[0] = 0;
     free(data);
     if (!ok) wr_error_set("缓存失败：图片写入 EPUB 失败");
@@ -379,15 +409,9 @@ static bool package_book(const wr_book_t *book, FILE *target, const wr_chapter_t
     unsigned image_id = 1;
     for (unsigned i = 0; ok && i < count && !wr_cancelled(); ++i) {
         int64_t chapter_started = esp_timer_get_time();
-        wr_reader_t reader;
-        size_t size;
-        bool plain;
-        char *content=NULL;
-        for (unsigned attempt=0;attempt<3 && !content && !wr_cancelled();++attempt) {
-            if (wr_reader(book->id,chapters[i].id,&reader))
-                content=wr_chapter_content(book->id,chapters[i].id,&reader,&plain,&size);
-            if (!content && attempt<2) vTaskDelay(pdMS_TO_TICKS(400u*(attempt+1)));
-        }
+        size_t size = 0;
+        bool plain = false;
+        char *content = cache_fetch_chapter(book, &chapters[i], &plain, &size, i);
         if (!content) {
             if (!wr_cancelled() && !strcmp(wr_error_message(),"操作失败，请检查网络后重试"))
                 wr_error_set("缓存失败：章节下载失败（已自动重试 3 次）");
@@ -419,6 +443,8 @@ static bool package_book(const wr_book_t *book, FILE *target, const wr_chapter_t
         if (!ok) ESP_LOGE("WEREAD","cache package failed book=%s chapter=%u title=%s error=%s",book->id,i,chapters[i].title,wr_error_message());
         free(content);
         wr_work_progress(i+1, count);
+        /* Let idle/UI and watchdog service run between CPU-heavy chapter conversions. */
+        vTaskDelay(1);
     }
     if (ok && !wr_cancelled()) {
         ok = fputs("</manifest><spine>", opf) != EOF;

@@ -1,23 +1,18 @@
 # 版本变更 / Changelog
 
-## 完整刷写包 / Full firmware bundle — 2026-11-15
+## 最终源码与缓存验证 / Final source and cache verification — 2026-11-16
 
-- 新增 Metalio S31 `0.3.3-rc113` 完整固件安装包、SHA-256 校验文件和 Windows 刷写说明。包内含 bootloader、分区表、应用固件和 OTA 数据镜像；刷写命令不擦除用户数据分区。
-- Added the Metalio S31 `0.3.3-rc113` full firmware installation bundle, SHA-256 checksum, and Windows flashing guide. It includes bootloader, partition table, application, and OTA data images; the command does not erase user-data partitions.
-- 新增完整 16 MiB 原始闪存镜像及压缩下载包。该镜像从 `0x0` 写入会清除所有现有数据，说明中明确区分保数据安装包与整片镜像。
-- Added the complete 16 MiB raw flash image and compressed download. Flashing this image at `0x0` erases existing data; the guide distinguishes it from the data-preserving installer.
-- 微信读书缓存任务临时关闭 Wi-Fi 省电并在结束后恢复，新增 HTTP 请求与整本任务耗时日志；构建已完成，实机速度收益待验证。
-- During WeRead book caching, temporarily disable Wi-Fi power saving and restore it at task completion; add per-request and whole-task timing logs. Build completed; on-device speed gains remain to be measured.
+- 微信读书图片地址被白名单拒绝时，只记录协议、主机字段和 URL 长度，不记录签名查询参数；确定性拒绝不再重试。设备缓存书籍 `36213094` 实测 32/32 章完成，58 张远程图片全部下载成功；另有 1 个相对路径引用被安全过滤，未影响章节和整书缓存完成。该地址不是 CDN 主机名，非 HTTPS 绝对图片地址不会被当作远程图下载。最终 Metalio S31 16 MiB 原始全闪存包及刷写说明见 `FULL_FLASH_16MB.md`。
+  When a WeRead image URL is rejected by the allowlist, the firmware logs only its scheme, host field and URL length, never signed query parameters; deterministic rejections are not retried. A device cache run for book `36213094` completed all 32/32 chapters and downloaded all 58 remote images; one relative-path reference was safely filtered without affecting chapter or book completion. It was not a CDN hostname, and non-HTTPS absolute image URLs are not fetched as remote images. See `FULL_FLASH_16MB.md` for the final Metalio S31 16 MiB raw full-flash package and guide.
 
-## 源码更新 / Source update — 2026-11-15
+## 本地测试 / Local test — 2026-11-16
 
-- 首页最近阅读遇到微信读书缓存书籍时，重新进入首页会重新发起封面读取；封面任务失败会重试，避免首页长期缺少缓存书封面。
-- 阅读页进入时恢复系统配置的抗锯齿与字重。切换书内字体时，等待新章节重新排版成功后再保存选择；内存不足或后台任务启动失败时显示明确提示，并记录切换结果日志。
-- 异常启动时先用内建字体安全显示首屏；首屏成功且启动记录保存后解除全局字体/封面限制，同时保留中断书籍的单书隔离。用户在 S31 上复测“首页拔 USB、锁屏再解锁”，本轮未复现封面与字体丢失。
+  A device attempt to cache book `914613` received a non-success HTTP response about 1.2 seconds after restoring cookies on the experimental HTTP/TLS keep-alive path, before fetching the chapter list. Complete-response requests now use the verified `open/fetch_headers/read` path, retaining per-image timing logs. The ESP-IDF 6.1 / GCC 15.2 incremental build passed; image size is 5,204,832 bytes, SHA-256 `ADAD308AD3EB81BC24C9D46167AFE8F7AAF1FB2D5464ACF2F790426AA7F9C20F`. Flashed to the S31 app partition and hash verified. Subsequent cache attempts fetched chapter lists and completed full-book downloads.
 
-- On the home page, reopening a recently read WeRead cached book requests its cover again; failed cover jobs retry instead of leaving a permanent blank.
-- The reader reapplies the configured antialiasing and weight on entry. Embedded-font selection is saved only after the chapter is successfully re-typeset; allocation or task-start failures show a message and the outcome is logged.
-- After an abnormal start, the firmware uses the built-in face for a safe first frame. Once that frame and startup checkpoint succeed, it releases global font/cover restrictions while retaining quarantine for an interrupted book. The user retested unplugging USB from Home and locking/unlocking on S31; the cover/font loss did not reproduce.
+## 本地测试 / Local test — 2026-11-15
+
+- 真机日志显示双任务预取版单章预取约 66 秒，并持续触发 IDLE 看门狗；同时每章额外写入、`fsync` 并回读 SD 临时文件。已改为单 worker 顺序下载并直接将 PSRAM 内容交给 EPUB 组装，删除章节临时落盘/回读和预取任务；章节组装后让出一个 RTOS tick。ESP-IDF v6.1 增量构建通过，S31 应用镜像 5,204,192 bytes，SHA-256 `7ba47e4813d00e7a89b047aa6faf6fe1ca45214f35490601a7d6ff392c63739e`。尚未刷写，需实机对照缓存速度与看门狗；未发布。
+  Device logs showed about 66 seconds per prefetched chapter and repeated IDLE watchdog alerts. Each chapter also incurred an extra SD write, `fsync` and readback. Caching now uses one worker, fetches chapters sequentially, passes PSRAM content directly to EPUB assembly, removes staging-file I/O and yields one RTOS tick after each chapter. The ESP-IDF v6.1 incremental build passed; the S31 app image is 5,204,192 bytes with SHA-256 `7ba47e4813d00e7a89b047aa6faf6fe1ca45214f35490601a7d6ff392c63739e`. Not flashed; device speed and watchdog behavior still need comparison. Not published.
 
 ## Metalio S31 0.3.3-rc113 — 2026-11-12
 

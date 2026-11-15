@@ -19,7 +19,7 @@ English: [README.en.md](README.en.md)
 
 源码索引见 [`docs/SOURCE_LAYOUT.md`](docs/SOURCE_LAYOUT.md)，微信读书模块边界和数据流见 [`docs/WEREAD_ARCHITECTURE.md`](docs/WEREAD_ARCHITECTURE.md)，S31 构建方法见 [`docs/BUILD_METALIO_S31.md`](docs/BUILD_METALIO_S31.md)。
 
-最新源码变更见 [`docs/CHANGELOG.md`](docs/CHANGELOG.md)。2026-11-15 更新包含首页最近阅读微信读书缓存封面重试、阅读字体切换与抗锯齿修复，以及异常启动后恢复字体和封面的处理；USB 拔出后锁屏/解锁场景已在 S31 上复测，本轮未复现问题。
+最新源码变更与设备缓存验证结果见 [`docs/CHANGELOG.md`](docs/CHANGELOG.md)。2026-11-16 在 Metalio S31 上完成一本 32 章书籍缓存复测：所有章节完成，58 张远程图片成功下载，1 个相对路径引用被安全过滤。
 
 需要 ESP-IDF **v6.1**。在 ESP-IDF 环境中，从仓库根目录构建：
 
@@ -41,7 +41,7 @@ python tools/build_firmware.py --board metalio47 --idf-metalio47 "$IDF_PATH" --p
 
 ## 完整固件刷写包
 
-Metalio S31 0.3.3-rc113 完整刷写包与 Windows 使用说明见 [`firmware/metalio47/0.3.3-rc113/`](firmware/metalio47/0.3.3-rc113/)。目录中有保留用户数据的多镜像安装包，也有会覆盖整片闪存、清除用户数据的 16 MiB 原始镜像，请按说明选择。
+Metalio S31 0.3.3-rc113 最终版 16 MiB 全闪存镜像与 Windows 使用说明见 [`docs/FULL_FLASH_16MB.md`](docs/FULL_FLASH_16MB.md)。镜像从 `0x0` 写入并覆盖整片闪存，会清除设备设置、账户与内部缓存；下载链接和校验文件位于 [GitHub Release](https://github.com/YIYO-Designer/kiikoreader-wereader/releases/latest)。
 
 ## 许可
 
