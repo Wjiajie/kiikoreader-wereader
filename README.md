@@ -19,6 +19,8 @@ English: [README.en.md](README.en.md)
 
 源码索引见 [`docs/SOURCE_LAYOUT.md`](docs/SOURCE_LAYOUT.md)，微信读书模块边界和数据流见 [`docs/WEREAD_ARCHITECTURE.md`](docs/WEREAD_ARCHITECTURE.md)，S31 构建方法见 [`docs/BUILD_METALIO_S31.md`](docs/BUILD_METALIO_S31.md)。
 
+最新源码变更见 [`docs/CHANGELOG.md`](docs/CHANGELOG.md)。2026-11-15 更新包含首页最近阅读微信读书缓存封面重试，以及阅读字体切换和抗锯齿状态修复；这些是源码修复，仍需在设备上验证最终显示效果。
+
 需要 ESP-IDF **v6.1**。在 ESP-IDF 环境中，从仓库根目录构建：
 
 ```bash
