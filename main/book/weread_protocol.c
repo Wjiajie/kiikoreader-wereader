@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: MIT
  * Protocol details adapted from CrossMux WeReadWebApi (commit efee672).
- * The original notice is in licenses/LICENSE-CrossMux.txt.
+ * The original notice is in licenses/CrossMux-MIT.txt.
  */
 #include "weread_internal.h"
 

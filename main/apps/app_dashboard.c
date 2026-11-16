@@ -935,7 +935,7 @@ static void on_enter(app_ctx_t *ctx) {
     s_scan_pending = !same || changed || s_cached_progress_revision != progress_revision;
     s_home_scan_after = ctx->now_ms + 300;
     if (!same) {
-        clear_cover_cache();
+        clear_cover_cache(false);
         memset(&s_current, 0, sizeof(s_current));
         memset(s_recent, 0, sizeof(s_recent));
         s_excerpt[0] = 0;
