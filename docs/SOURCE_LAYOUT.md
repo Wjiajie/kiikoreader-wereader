@@ -3,13 +3,13 @@
 
 # 源码目录索引
 
-本仓库以标准 ESP-IDF 项目结构组织，默认开发目标为 kiikoreader Metalio S31（ESP32-S31，固件基线 0.3.3-rc113）。共享代码仍保留 Pico 板级支持；构建目标由 `--board` 明确选择。
+本仓库以标准 ESP-IDF 项目结构组织，唯一支持板型为 kiikoreader Metalio S31（`metalio47` / `metalio_s31`，ESP32-S31，固件基线 0.3.3-rc114）。`boards/pico` 已移除；`KIIKO_BOARD=pico` 会被拒绝。
 
 ```text
 .
 ├── .github/workflows/   GitHub Actions 构建与源码检查
-├── boards/              板级配置与驱动；metalio47 为本项目目标
-├── cmake/               ESP-IDF / CMake 辅助配置
+├── boards/metalio47/    Metalio S31 板级配置与驱动（唯一板型）
+├── cmake/               ESP-IDF / CMake 辅助配置（默认 metalio47）
 ├── components/          可复用 ESP-IDF 组件、显示、存储、传输和传感器驱动
 ├── docs/                硬件、构建、用户文档及功能架构说明
 ├── licenses/            项目补充许可文本
@@ -22,8 +22,7 @@
 │   └── assets/           固件嵌入资源
 ├── tools/                构建、打包、主机侧检查和开发工具
 ├── CMakeLists.txt        ESP-IDF 顶层工程入口
-├── dependencies.lock     ESP-IDF 组件依赖锁定
-└── sdkconfig.defaults    由板级配置选用的默认构建选项
+└── dependencies.lock     ESP-IDF 组件依赖锁定（板级锁在 boards/metalio47/）
 ```
 
 ## 阅读代码建议

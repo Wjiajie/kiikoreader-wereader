@@ -603,6 +603,7 @@ static bool s_ble_network_reserved;
 static int s_active_static_rx = CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM;
 static int s_active_rx_ba = CONFIG_ESP_WIFI_RX_BA_WIN;
 #include "nvs.h"
+#include "esp_random.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
@@ -620,6 +621,46 @@ static esp_err_t transfer_socket_open(httpd_handle_t server, int socket) {
 }
 static portMUX_TYPE s_lock = portMUX_INITIALIZER_UNLOCKED;
 static read_pico_transfer_status_t s_status;
+static char s_access_token[9];
+static char s_ap_password[17];
+
+static void transfer_fill_random_token(char *out, size_t cap) {
+    static const char alphabet[] = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    if (!out || cap < 2) return;
+    uint8_t bytes[16];
+    esp_fill_random(bytes, sizeof(bytes));
+    size_t n = cap - 1 < 8 ? cap - 1 : 8;
+    for (size_t i = 0; i < n; ++i) out[i] = alphabet[bytes[i] % (sizeof(alphabet) - 1)];
+    out[n] = 0;
+}
+
+static void transfer_load_or_create_ap_password(void) {
+    if (s_ap_password[0]) return;
+    nvs_handle_t handle;
+    esp_err_t err = nvs_open("metalio_wifi", NVS_READONLY, &handle);
+    if (err == ESP_OK) {
+        size_t size = sizeof(s_ap_password);
+        err = nvs_get_str(handle, "ap_pass", s_ap_password, &size);
+        nvs_close(handle);
+        if (err == ESP_OK && strlen(s_ap_password) >= 8) return;
+        memset(s_ap_password, 0, sizeof(s_ap_password));
+    }
+    transfer_fill_random_token(s_ap_password, sizeof(s_ap_password));
+    // Ensure WPA2 length >= 8; token helper already yields 8.
+    err = nvs_open("metalio_wifi", NVS_READWRITE, &handle);
+    if (err == ESP_OK) {
+        if (nvs_set_str(handle, "ap_pass", s_ap_password) == ESP_OK) (void)nvs_commit(handle);
+        nvs_close(handle);
+    }
+}
+
+static bool transfer_token_ok(httpd_req_t *req) {
+    char token[16] = {0};
+    if (!s_access_token[0]) return false;
+    if (httpd_req_get_hdr_value_str(req, "X-Kiiko-Token", token, sizeof(token)) != ESP_OK) return false;
+    return strcmp(token, s_access_token) == 0;
+}
+
 static read_pico_transfer_cfg_t s_cfg;
 static char s_root[160];
 static read_pico_transfer_cfg_t s_sleep_cfg;
@@ -1304,10 +1345,15 @@ static esp_err_t respond_error(httpd_req_t *req, int code) {
 
 static esp_err_t index_handler(httpd_req_t *req) {
     httpd_resp_set_type(req, "text/html; charset=utf-8");
-    return httpd_resp_send(req, upload_start, upload_end - upload_start - 1);
+    char prefix[96];
+    snprintf(prefix, sizeof(prefix), "<script>window.KIIKO_TOKEN='%s'</script>", s_access_token);
+    if (httpd_resp_send_chunk(req, prefix, strlen(prefix)) != ESP_OK) return ESP_FAIL;
+    if (httpd_resp_send_chunk(req, upload_start, (ssize_t)(upload_end - upload_start - 1)) != ESP_OK) return ESP_FAIL;
+    return httpd_resp_send_chunk(req, NULL, 0);
 }
 
 static esp_err_t info_handler(httpd_req_t *req) {
+    if (!transfer_token_ok(req)) return respond_error(req, 403);
     read_pico_transfer_status_t status;
     read_pico_transfer_get_status(&status);
     cJSON *json = cJSON_CreateObject();
@@ -1407,6 +1453,7 @@ static bool management_request(httpd_req_t *req) {
     read_pico_transfer_status_t status;
     read_pico_transfer_get_status(&status);
     if (!status.network_ready || strncmp(status.url, "http://", 7)) return false;
+    if (!transfer_token_ok(req)) return false;
     snprintf(host_port, sizeof(host_port), "%.56s:80", status.url + 7);
     snprintf(origin_port, sizeof(origin_port), "%.63s:80", status.url);
     if (httpd_req_get_hdr_value_str(req, "Host", host, sizeof(host)) != ESP_OK ||
@@ -2262,10 +2309,15 @@ esp_err_t read_pico_transfer_start(const read_pico_transfer_cfg_t *cfg) {
     if (cfg->root_dir) strcpy(s_root, cfg->root_dir);
     else s_root[0] = 0;
     s_cfg.root_dir = s_root;
+    transfer_fill_random_token(s_access_token, sizeof(s_access_token));
+    if (cfg->mode == READ_PICO_TRANSFER_MODE_AP) transfer_load_or_create_ap_password();
     portENTER_CRITICAL(&s_lock);
     memset(&s_status, 0, sizeof(s_status)); s_status.state = READ_PICO_TRANSFER_STARTING;
     s_stopping = s_upload_active = false;
     s_status.mode = cfg->mode;
+    strlcpy(s_status.access_token, s_access_token, sizeof(s_status.access_token));
+    if (cfg->mode == READ_PICO_TRANSFER_MODE_AP)
+        strlcpy(s_status.ap_password, s_ap_password, sizeof(s_status.ap_password));
     portEXIT_CRITICAL(&s_lock);
     transfer_credentials_t saved = {0};
     wifi_config_t wifi = {0};
@@ -2348,10 +2400,14 @@ esp_err_t read_pico_transfer_start(const read_pico_transfer_cfg_t *cfg) {
         uint8_t mac[6];
         err = esp_read_mac(mac, ESP_MAC_WIFI_SOFTAP); if (err != ESP_OK) goto fail;
         snprintf((char *)wifi.ap.ssid, sizeof(wifi.ap.ssid), "Metalio-S31-%02X%02X", mac[4], mac[5]);
-        strcpy((char *)wifi.ap.password, READ_PICO_TRANSFER_PASSWORD);
+        transfer_load_or_create_ap_password();
+        strlcpy((char *)wifi.ap.password, s_ap_password, sizeof(wifi.ap.password));
         wifi.ap.ssid_len = strlen((char *)wifi.ap.ssid); wifi.ap.channel = 1;
         wifi.ap.max_connection = 1; wifi.ap.authmode = WIFI_AUTH_WPA2_PSK;
-        portENTER_CRITICAL(&s_lock); strcpy(s_status.ssid, (char *)wifi.ap.ssid); portEXIT_CRITICAL(&s_lock);
+        portENTER_CRITICAL(&s_lock);
+        strlcpy(s_status.ssid, (char *)wifi.ap.ssid, sizeof(s_status.ssid));
+        strlcpy(s_status.ap_password, s_ap_password, sizeof(s_status.ap_password));
+        portEXIT_CRITICAL(&s_lock);
     } else {
         memcpy(wifi.sta.ssid, saved.ssid, strlen(saved.ssid));
         memcpy(wifi.sta.password, saved.password, strlen(saved.password));
@@ -3125,6 +3181,7 @@ static bool management_request(httpd_req_t *req) {
     read_pico_transfer_status_t status;
     read_pico_transfer_get_status(&status);
     if (!status.network_ready || strncmp(status.url, "http://", 7)) return false;
+    if (!transfer_token_ok(req)) return false;
     snprintf(host_port, sizeof(host_port), "%.56s:80", status.url + 7);
     snprintf(origin_port, sizeof(origin_port), "%.63s:80", status.url);
     if (httpd_req_get_hdr_value_str(req, "Host", host, sizeof(host)) != ESP_OK ||

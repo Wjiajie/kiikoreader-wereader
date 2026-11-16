@@ -199,6 +199,14 @@ if(METALIO_TEXT_RIPPLE_EXPERIMENT)
     target_compile_definitions(${COMPONENT_LIB} PRIVATE KIIKO_S31_TEXT_RIPPLE=1)
 endif()
 
+# 星曈云密钥仅构建注入，不进源码树。/ Inject Xteink cloud secret at build time; never store it in the tree.
+if(DEFINED ENV{KIIKO_XTEINK_APP_SECRET} AND NOT "$ENV{KIIKO_XTEINK_APP_SECRET}" STREQUAL "")
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE "XTEINK_APP_SECRET=\"$ENV{KIIKO_XTEINK_APP_SECRET}\"")
+endif()
+if(DEFINED ENV{KIIKO_XTEINK_APP_ID} AND NOT "$ENV{KIIKO_XTEINK_APP_ID}" STREQUAL "")
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE "XTEINK_APP_ID=\"$ENV{KIIKO_XTEINK_APP_ID}\"")
+endif()
+
 else()
 set(main_requires
     kiiko_locale
@@ -316,6 +324,7 @@ kiiko_board_sources(kiiko_selected_sources "${CMAKE_CURRENT_LIST_DIR}" "app_main
         "book/book_cover.c"
         "book/book_cover_jobs.c"
         "book/book_shelf_page_cache.c"
+        "book/metalio_cover_cache.c"
         "book/book_image_header.c"
         "book/book_cover_auto.c"
         "book/zip_reader.c"

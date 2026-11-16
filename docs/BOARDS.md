@@ -1,29 +1,27 @@
-# 双板型构建
+# Metalio S31 板型构建
 
-本仓库的 `main` 同时维护 Pico 与 Metalio S31 源码：共享 `main/` 阅读器和 UI，板级驱动与配置由 `boards/` 选择。正式二进制继续在统一 Release 归档，官网按机型选择。现有文件许可与第三方权利保持。
-
-维护同一份 `main/` 阅读器和 UI 源码，通过 `KIIKO_BOARD` 选择设备。`boards/<设备>/` 保存该设备的配置、分区和硬件后端，`cmake/board.cmake` 选择参与编译的驱动。已有 `read_pico_*` 接口名继续作为内部兼容接口使用。
+本仓库以 **Metalio S31**（`metalio47`，别名 `metalio_s31`）为唯一支持板型。共享 `main/` 阅读器和 UI；板级驱动与配置在 `boards/metalio47/`。`cmake/board.cmake` 默认选择 metalio47，并拒绝 `pico`。已有 `read_pico_*` 接口名继续作为内部兼容 API 使用（不是 Pico 板型入口）。现有文件许可与第三方权利保持。
 
 ## 支持的设备
 
-| 编译选项 | `pico` | `metalio47` |
-| --- | --- | --- |
-| 设备 | 原 kiikoread 墨水屏 | Metalio E-INK4 Plus 4.7 V1.5 |
-| 芯片 / 编译器 | ESP32-S3 / Xtensa | ESP32-S31 / RISC-V |
-| 固件项目名 | `Read_Pico` | `Kiikoread_Metalio_S31` |
-| 触摸 | CST836U | FT6336 |
-| 屏幕供电 | 原 CW32 / SY7636A 路径 | TPS65185 / TCA9555 |
-| 波形 | 原 Pico 校准序列 | 原 GC48 / GL48 / DU20 |
-| 应用分区 | 双 4 MiB | 双 5 MiB |
-| bootloader 地址 | `0x0` | `0x2000` |
-| OTA 数据地址 | `0xd10000` | `0xd000` |
-| 设置命名空间 | `read_pico` | `metalio_s31` |
-| 锁屏 / 启动记录空间 | `pico_lock` / `pico_startup` | `metalio_lock` / `metalio_start` |
-| 联网 OTA | 沿用正式版 | 支持，GitHub Pages 优先、官网备用 |
+| 编译选项 | `metalio47`（别名 `metalio_s31`） |
+| --- | --- |
+| 设备 | Metalio E-INK4 Plus 4.7 V1.5 |
+| 芯片 / 编译器 | ESP32-S31 / RISC-V |
+| 固件项目名 | `Kiikoread_Metalio_S31` |
+| 触摸 | FT6336 |
+| 屏幕供电 | TPS65185 / TCA9555 |
+| 波形 | 原 GC48 / GL48 / DU20 |
+| 应用分区 | 双 5 MiB |
+| bootloader 地址 | `0x2000` |
+| OTA 数据地址 | `0xd000` |
+| 设置命名空间 | `metalio_s31` |
+| 锁屏 / 启动记录空间 | `metalio_lock` / `metalio_start` |
+| 联网 OTA | 支持，GitHub Pages 优先、官网备用 |
 
-Metalio 仅适用于已适配的 **V1.5 / E0470A14-AF 34Pin** 硬件，不自动推断其他硬件修订。两种设备的原始波形、供电时序、引脚、存储地址及默认配置分别保留；共享功能更新不代表把一块板的底层参数搬到另一块板。
+Metalio 仅适用于已适配的 **V1.5 / E0470A14-AF 34Pin** 硬件，不自动推断其他硬件修订。Read Pico 板型树与构建矩阵已移除；`KIIKO_BOARD=pico` 在配置期失败。
 
-两块板共用rc97的凭据读取和紧凑启动记录逻辑：正常可读的已设密码仍验证；读取失败或损坏时不拦启动、可重新读取且禁止覆盖旧凭据。启动记录兼容旧定长格式，空间不足只回收自身旧记录。S31异常启动字体回退、USB交接、前光与睡眠恢复由自身后端保留。
+S31 凭据读取与紧凑启动记录：正常可读的已设密码仍验证；读取失败或损坏时不拦启动、可重新读取且禁止覆盖旧凭据。启动记录兼容旧定长格式，空间不足只回收自身旧记录。异常启动字体回退、USB交接、前光与睡眠恢复由 S31 后端保留。
 
 Metalio设置主列表及文件管理内容按黑白目标使用DU20，固定底栏保留已显示像素，手动全刷与故障恢复仍走完整路径；设置子页图片预览保留灰阶。首页继续阅读卡片纯白，七款时钟在两种板型共用可释放底图缓存，覆盖首页、样式预览及放大时间页。实时底图两槽最多231840字节；S31额外为七款选择页预览各保留一个有界槽，统一池最多1043280字节PSRAM，始终预留2MiB；IKEA/小屋数字使用当前系统字体，Cat眼睛和Kehai圆环/圆点仅重绘局部，日期/分钟/方向/黑白模式和尺寸变化按需失效；内存不足直接绘制，进入阅读前释放。S31样式选择页固定10:10:30并按需缓存完整表盘，停止秒针/猫眼更新；箭头切换不单独扫描按下态，未变的底部按钮排除在更新范围之外，仍使用完整灰阶。选择页显示完成且空闲600ms后每轮最多在临时PSRAM画布准备一个相邻表盘，不写front/back，保留2MiB余量，用后即释放；触摸、待推屏或缺内存时暂缓。离开字体设置后重新进入首页时失效完整预览，首页与时间详情的实时底图不包含活动字形。普通灰阶切页的备行等待仅在非传输且无欠载时缩减，欠载后本次开机回退保守余量。
 
@@ -208,64 +206,51 @@ S31 charging uses a fixed black well with a white bolt outline. Detection retain
 
 ## 准备 SDK
 
-需要 Python 环境、ESP-IDF 6.1 及对应工具链。Pico 使用已有的 ESP32-S3 SDK；Metalio 使用已适配 ESP32-S31 的 SDK，必须包含 `components/soc/esp32s31`。普通只支持 S3 的 SDK 不能编译 S31。
+需要 Python 环境、ESP-IDF 6.1 及已适配 ESP32-S31 的 SDK（必须包含 `components/soc/esp32s31`）。普通只支持 S3 的 SDK 不能编译 S31。
 
 将路径填入环境变量，Python 路径应指向已安装 ESP-IDF Python 依赖的虚拟环境入口：
 
 ```sh
-export KIIKO_IDF_PICO=/path/to/esp-idf-s3
 export KIIKO_IDF_METALIO47=/path/to/esp-idf-s31
 export IDF_TOOLS_PATH=/path/to/idf-tools
 ```
 
-## 一条命令生成两个版本
+## 构建 Metalio S31
 
 在源码根目录执行：
 
 ```sh
-python3 tools/build_firmware.py --board all \
+python3 tools/build_firmware.py --board metalio47 \
   --python /path/to/idf-python/bin/python \
   --tools "$IDF_TOOLS_PATH"
 ```
 
-也可以单独选择：
+别名 `metalio_s31` 与 `all`（当前等同 metalio47）亦可。`--idf-metalio47` 可代替 SDK 环境变量；`--output` 修改输出目录。离线构建可用 `--managed-metalio47` 指定与锁文件匹配的 `managed_components` 缓存。`--dry-run` 显示计划，`--board metalio47 --list` 显示板型元数据。`pico` 会被拒绝。工具仅编译和打包，不打开串口。
 
-```sh
-python3 tools/build_firmware.py --board pico --python /path/to/idf-python/bin/python
-python3 tools/build_firmware.py --board metalio47 --python /path/to/idf-python/bin/python
-```
-
-`--idf-pico`、`--idf-metalio47` 可代替 SDK 环境变量；`--output` 修改输出目录。离线构建可用 `--managed-pico`、`--managed-metalio47` 指定与各自锁文件匹配的 `managed_components` 缓存。`--dry-run` 显示计划，`--board all --list` 显示支持的设备。工具仅编译和打包，不打开串口。
-
-构建器从同一维护源码生成独立的临时设备视图，分开保存配置、依赖、CMake 缓存、日志及产物：
+构建器从维护源码生成独立的临时设备视图，分开保存配置、依赖、CMake 缓存、日志及产物：
 
 ```text
 build/boards/
-  pico/{source,build,sdkconfig,build.log}
   metalio47/{source,build,sdkconfig,build.log}
-  packages/pico/
   packages/metalio47/
-  packages/kiikoread-pico-<版本>-USB.zip
   packages/kiikoread-metalio47-<版本>-USB.zip
 ```
 
-日常修改应改维护源码 `main/`、`components/` 或相应 `boards/<设备>/src/`，不要修改生成的 `build/boards/<设备>/source/`。共用功能不再分别维护两套应用目录；仅硬件、驱动和有明确平台差异的行为选择分支。
+日常修改应改维护源码 `main/`、`components/` 或 `boards/metalio47/src/`，不要修改生成的 `build/boards/metalio47/source/`。
 
-图标由同一个生成器维护：`python3 tools/gen_ui_icons.py --board all` 更新两块板的生成头文件；也可只指定一种设备。保留原图标枚举顺序和 Metalio 的前光图标，生成器不会覆盖共享的图标选择头。
+图标生成：`python3 tools/gen_ui_icons.py --board metalio47`（或 `all`）。保留原图标枚举顺序和 Metalio 的前光图标，生成器不会覆盖共享的图标选择头。
 
 ## CMake 选择层
 
-构建器将 `-DKIIKO_BOARD=pico|metalio47`、对应 `IDF_TARGET`、sdkconfig 和依赖锁文件交给各自的 ESP-IDF。生产源码中的条件分支由真实 C 编译器处理。请用上面的构建器隔离依赖锁和 SDK 缓存；不要在维护源码根目录轮换两个 SDK 并共用根 sdkconfig。板型和目标冲突、未知板型会在配置阶段报错。
+构建器将 `-DKIIKO_BOARD=metalio47`、`IDF_TARGET=esp32s31`、sdkconfig 和依赖锁文件交给 ESP-IDF。`KIIKO_BOARD_METALIO47` 恒为 1。生产源码中的条件分支由真实 C 编译器处理。请用上面的构建器隔离依赖锁和 SDK 缓存。未知板型、`pico` 或目标冲突会在配置阶段报错。
 
-CI 对两块板各跑一轮构建和宿主测试（`matrix.board: [pico, metalio47]`），`tools/board_layer_host_test.py` 校验 board.json、板级 sdkconfig、分区表、CI 矩阵与本文档互相对得上。板级配置、分区表和依赖锁只保留在 `boards/<设备>/`；仓库根不再有 `sdkconfig.defaults`、`sdkconfig.ci` 或 `partitions*.csv` 副本。
+CI 仅跑 Metalio S31 构建和宿主测试（`matrix.board: [metalio47]`），`tools/board_layer_host_test.py` 校验 board.json、板级 sdkconfig、分区表、CI 矩阵与本文档互相对得上。板级配置、分区表和依赖锁只保留在 `boards/metalio47/`；仓库根不再有 `sdkconfig.defaults`、`sdkconfig.ci` 或 `partitions*.csv` 副本。
 
 ## 交付与验证
 
-打包前校验应用内部芯片 ID、项目名、版本、分区表及两个 OTA 槽的容量，同时校验 bootloader 的芯片 ID 和 SDK 给出的烧录地址。完整 USB 包包含四个镜像、SHA-256、manifest、`flash_args`、`flash-command.txt` 及 `verification.json`；S31 命令保留 `--no-stub`。应用 Bin 只适用于已有正确底包的同板型升级，不能写到地址 0。固件内的升级校验也拒绝另一芯片/项目的应用。
+打包前校验应用内部芯片 ID、项目名、版本、分区表及两个 OTA 槽的容量，同时校验 bootloader 的芯片 ID 和 SDK 给出的烧录地址。完整 USB 包包含四个镜像、SHA-256、manifest、`flash_args`、`flash-command.txt` 及 `verification.json`；S31 命令保留 `--no-stub`。应用 Bin 只适用于已有正确底包的同板型升级，不能写到地址 0。
 
-本次整合为本地测试，沿用当前正式版本号区分板型，未覆盖官网、Release 或历史固定版本下载。两套完整构建和主机回归不等同于已在两块实机完成触摸、显示、TF 卡及低功耗验证。
-
-本地同版本测试请使用对应 USB 包；设备的正常 TF/OTA 检查仍会拒绝与当前版本号相同的镜像。
+本地同版本测试请使用对应 USB 包；设备的正常 TF/OTA 检查仍会拒绝与当前版本号相同的镜像。完整构建和主机回归不等同于已在实机完成触摸、显示、TF 卡及低功耗验证。
 
 ## 回归命令
 
@@ -274,15 +259,14 @@ python3 tools/board_layer_host_test.py
 python3 tools/board_selection_host_test.py
 python3 tools/board_selection_host_test.py --build-root build/boards
 
-python3 tools/board_source_view.py --board pico --tests --output build/host/pico
 python3 tools/board_source_view.py --board metalio47 --tests --output build/host/metalio47
 ```
 
-在相应生成的主机测试视图中运行现有测试。Pico 包括 `run_water_turn_host_test.sh`、`run_display_host_test.sh`、`reader_spacing_host_test.py`、`test_book_toc.py`、`lock_pin_host_test.py`；Metalio 还必须运行 `run_metalio_host_test.sh` 和 `run_metalio_ota_host_test.sh`，其专用夹具随测试视图自动选择。
+在生成的 Metalio 主机测试视图中运行现有测试，包括 `run_water_turn_host_test.sh`、`run_display_host_test.sh`、`reader_spacing_host_test.py`、`test_book_toc.py`、`lock_pin_host_test.py`，以及 `run_metalio_host_test.sh` / `run_metalio_ota_host_test.sh`（若存在）；专用夹具随测试视图自动选择。
 
-子页布局按1216px可用高度定位：文件目录列表扩展，目录设置/移动按钮与分页贴底，系统输入键盘底部留26px；绘制、点击和局部刷新共用几何。字体列表与书架样式预览使用完整子页视口，传输底部按钮随视口下移。Pico保留原布局。
+子页布局按1216px可用高度定位：文件目录列表扩展，目录设置/移动按钮与分页贴底，系统输入键盘底部留26px；绘制、点击和局部刷新共用几何。字体列表与书架样式预览使用完整子页视口，传输底部按钮随视口下移。
 
-Child layouts use the1216px viewport: extend file lists, bottom-anchor directory/move actions and paging, and leave26px below system keyboards. Painting,hits and local refresh share geometry. Font lists and shelf-style previews use the child viewport; transfer footer controls move with it. Pico retains its existing layout.
+Child layouts use the1216px viewport: extend file lists, bottom-anchor directory/move actions and paging, and leave26px below system keyboards. Painting,hits and local refresh share geometry. Font lists and shelf-style previews use the child viewport; transfer footer controls move with it.
 
 ## S31传输与深睡恢复
 
@@ -300,11 +284,11 @@ English: File-transfer sessions own a BLE radio lease,stop scanning/links and pr
 
 `boards/<设备>/kiiko_board_config.h` 集中维护身份、NVS 命名空间、硬件能力和缓存预算；`main/kiiko_board_config.h` 是兼容入口。沿用 Moku 的板级门面 `components/kiiko_board`，其初始化不得重新拉起已由 BSP 初始化的外设。`board.cmake` 读取对应 `board.json`，芯片冲突立即报错，不强制改写旧构建目录。
 
-S31 稳定 ID 为 `metalio47`，兼容 Moku 的 `metalio_s31` 构建别名。Windows 加载对应 ESP-IDF 后可运行 `tools/build_board.ps1 -Board metalio_s31`，该入口共用 Python 构建器，分别生成源码视图、配置和依赖锁。`all` 需要分别配置两块板的 SDK 环境变量，参见上面的 Python 参数。
+S31 稳定 ID 为 `metalio47`，兼容 Moku 的 `metalio_s31` 构建别名。Windows 加载对应 ESP-IDF 后可运行 `tools/build_board.ps1 -Board metalio_s31`，该入口共用 Python 构建器，分别生成源码视图、配置和依赖锁。`all` 当前等同 metalio47。
 
-CI 同时编译两块板并验证芯片、项目名、分区、启动地址和应用大小。网页完整性回归使用 `tools/fixtures/flasher` 中的固定脚本及模拟清单，不依赖未提交的官网固件；官网文件和 Pages 部署由本仓库维护。
+CI 编译 Metalio S31 并验证芯片、项目名、分区、启动地址和应用大小。网页完整性回归使用 `tools/fixtures/flasher` 中的固定脚本及模拟清单，不依赖未提交的官网固件；官网文件和 Pages 部署由本仓库维护。
 
-English: Moku's board manifest/facade design centralizes capabilities and unchanged budgets while keeping native backends and strict target/config guards. `metalio_s31` aliases stable `metalio47`. The PowerShell wrapper shares the Python materializer/build driver. CI builds both chips and validates package identities/layouts; web regressions use self-contained fixtures without publishing a site.
+English: Moku's board manifest/facade design centralizes capabilities and unchanged budgets while keeping native backends and strict target/config guards. `metalio_s31` aliases stable `metalio47`. The PowerShell wrapper shares the Python materializer/build driver. CI builds S31 and validates package identities/layouts; web regressions use self-contained fixtures without publishing a site.
 
 S31 SDMMC沿用Metalio官方内部DMA中转：固定4096字节内部对齐缓冲、最多8扇区，外部RAM不直接进入SD DMA；失败挂载与成功卸载回收，卸载失败保留缓冲和卡所有权。时钟降档、四线引脚、FAT锁及USB独占流程保持。传书每两秒只对文件名/字节/进度条做局部黑白差分，失败刷新重试，网页字节发送完成后继续计时并等待设备保存确认。
 
@@ -322,7 +306,7 @@ S31 resumes pending SD font/book handles after normal standby. Transient I/O/OOM
 
 ### S31 DU14 local experiment / S31十四相本地实验
 
-`tools/build_firmware.py --board metalio47 --s31-du14` opts into the user-supplied manufacturer DU14 table; it is OFF by default and rejected for Pico. The original header is preserved at `boards/metalio47/src/components/e0470_epaper_waveform/my_waveform_du14.h` (SHA256 `cac0efbcb2801114b36a4bee5eaa9c453dcd7d098210ef2739f853e86a0c39f4`). No redistribution license has been inferred from its delivery. Package metadata explicitly records `experimental_du14`.
+`tools/build_firmware.py --board metalio47 --s31-du14` opts into the user-supplied manufacturer DU14 table; it is OFF by default. The original header is preserved at `boards/metalio47/src/components/e0470_epaper_waveform/my_waveform_du14.h` (SHA256 `cac0efbcb2801114b36a4bee5eaa9c453dcd7d098210ef2739f853e86a0c39f4`). No redistribution license has been inferred from its delivery. Package metadata explicitly records `experimental_du14`.
 
 仅替换速读黑白、主页黑白及黑白页刷访问器，复用原扫描时序和脏区。14相原表不加前清屏或额外相位；黑到黑末4相补黑、白到白保持。底栏灰阶组合显式取原20相；普通阅读、图片/封面、GL37/48、4灰面板、8相跟手和手动/周期/故障全刷不改变。灰阶目标不得直接用DU14替代。实际黑度、残影、温度及速度需要实屏比较。
 Only fast binary reading and binary main/page accessors switch, using existing scan timing/dirty regions. DU14 receives no preclear or added phases; it reinforces black-to-black in the last4 phases and holds white-to-white. Gray footer synthesis explicitly retains reference DU20. Ordinary reading, images/covers, GL37/48, four-gray panels, eight-phase tracking and manual/periodic/fault cleanup remain unchanged. Do not substitute DU14 for grayscale targets; optical density, ghosting, temperature and latency require panel comparison.
@@ -334,7 +318,7 @@ DU14 white maintenance: homepage Fast mode uses a derived14-phase profile only d
 
 ## TXT分卷目录 / TXT volume navigation
 
-两机共用TXT分卷识别和目录呈现。明确的卷/部/册及英文Part标题优先；没有卷名时，前章号至少5、当前回到1并在后续最多8个导航项内连续确认2/3，才推断新卷，不能按章号去重或排序。总结/感言/卷终保留为上一卷内容，缺少可信卷名显示自动编号。目录只展开一卷，进入时展开并定位当前章节；点击卷名仅展开/折叠，正文跳转仍使用原目录项与文件偏移。EPUB沿用自身目录，不从其正文推断TXT卷。
+TXT分卷识别和目录呈现：明确的卷/部/册及英文Part标题优先；没有卷名时，前章号至少5、当前回到1并在后续最多8个导航项内连续确认2/3，才推断新卷，不能按章号去重或排序。总结/感言/卷终保留为上一卷内容，缺少可信卷名显示自动编号。目录只展开一卷，进入时展开并定位当前章节；点击卷名仅展开/折叠，正文跳转仍使用原目录项与文件偏移。EPUB沿用自身目录，不从其正文推断TXT卷。
 
 最多256组，仅实际分卷时分配2KiB定位元数据；已有最多16384项/128KiB章节定位页和八条按需标题缓存不变。卷表超限或分配失败回退完整平铺目录，不缓存不完整结果。TXT缓存版本5校验卷范围、数量及校验和，更新时可自动重建缓存，不改旧2048阅读分段、进度/书签编号或TXT文件。首次扫描耗时仍受文件/SD影响。
 
@@ -347,9 +331,9 @@ English: The bottom volume button opens a root-only list using the existing seve
 
 ### S31 主页面切换加强擦白 / Stronger S31 root-switch erasure
 
-显式本地参数 `--s31-main-clean` 启用，默认关闭，Pico 单板构建拒绝此参数。清单记录 `experimental_main_clean`。只在首页、书架、文件管理、设置之间真正换页且画面改变时生效；同页控件、阅读正文、图片浏览、面板/菜单、锁屏、手动/周期/故障全刷保留原出口。
+显式本地参数 `--s31-main-clean` 启用，默认关闭。清单记录 `experimental_main_clean`。只在首页、书架、文件管理、设置之间真正换页且画面改变时生效；同页控件、阅读正文、图片浏览、面板/菜单、锁屏、手动/周期/故障全刷保留原出口。
 
-切换来源或目标为书架时增加八相变白，其余根页之间增加六相；追加两相全保持释放。保留S31原派生表的完整序列、灰阶、等值维护及DU14等白三相，不移植Pico波形。书架→首页原下半区加强先组合再派生；六/八相缓存按力度区分，已派生输入回到原源表，不重复叠加。底栏范围、横条同轮输出和水波纹方向保留，不增加前清屏或第二轮补刷。
+切换来源或目标为书架时增加八相变白，其余根页之间增加六相；追加两相全保持释放。保留S31原派生表的完整序列、灰阶、等值维护及DU14等白三相。书架→首页原下半区加强先组合再派生；六/八相缓存按力度区分，已派生输入回到原源表，不重复叠加。底栏范围、横条同轮输出和水波纹方向保留，不增加前清屏或第二轮补刷。
 
 DU14根页维护分别为22/24相；完整灰阶的既有50相根页分别为58/60相，书架→首页下半区最多62相；GL37书封的既有39相变为47/49相。均在本机64相引擎上限内。相较原“四相变白、两相释放”再增加2/4次扫描；总延迟和残影需实屏比较。阅读速读、普通/图文及水波纹保持原各自方案。
 
@@ -361,35 +345,25 @@ English: Explicit local S31 root scope chooses eight changed-white phases when e
 
 ### 未配置时的外观默认值 / Unconfigured appearance defaults
 
-两机共用产品默认：液态玻璃书架（样式6）、Moon Clock（组件4）、首页强刷开启。只有缺失或无效设置才使用默认；保留已保存的有效样式/组件，以及明确关闭首页强刷的选择。旧书架迁移标记仅补齐记录，不再强制把已保存的样式改为亚克力；已删除的3/4样式仍按既有规则回退2。刷机保留数据时不会清除已有选择；旧配置备份恢复继续按其记录执行。
+产品默认：液态玻璃书架（样式6）、Moon Clock（组件4）、首页强刷开启。只有缺失或无效设置才使用默认；保留已保存的有效样式/组件，以及明确关闭首页强刷的选择。旧书架迁移标记仅补齐记录，不再强制把已保存的样式改为亚克力；已删除的3/4样式仍按既有规则回退2。刷机保留数据时不会清除已有选择；旧配置备份恢复继续按其记录执行。
 
-English: Both boards default to liquid-glass shelf6, Moon Clock4 and Home full refresh ON only when unconfigured/invalid. Preserve valid saved choices and explicit OFF, including across retained-data flashing and backup restore. The legacy shelf marker no longer overwrites valid styles; retired3/4 still map to2.
-
-### Pico 主页面擦白实验 / Pico root-whitening experiment
-
-`--pico-main-clean` 单独启用，默认OFF，S31单板命令拒绝；与S31的`--s31-main-clean`分开配置。两机清单均记录各自的`experimental_main_clean`。只在四个可见根页之间真正切换时选择，首次进入、同页更新、阅读/子页/菜单/锁屏、首页强刷和手动/周期/失败全刷保留原出口。
-
-Pico派生其本机DU20/书架出口24/GL37：切换来源或目标是书架时补八相，其余根页之间补六相。保留原非等值动作，将补白插在原末尾保持之前；没有末尾保持的源再补一相释放。灰阶目标不量化，等值像素全部保持。GL37分别合43/45相，DU20合26/28相；书架退出原24相加8相及1保持为33相。书架内翻页、列表滚动和正文保留各自出口，不继承根页切换许可。
-
-条带引擎上限45相，8带紧凑切换分别50/52拍；阅读水波纹仍41相。扫描节拍、电压/供电、底栏裁剪和方向不变，不采用S31数据。普通/水波纹根页合并底部指示条，快刷灰阶带保留；补白在同轮输出，无新增全刷轮次。六个源表各缓存六/八两种力度，最多12×45×64=34560字节PSRAM加元数据，条带展开缓存最多45KiB；不新增整帧。OOM、缓存满或不兼容源回退原表，重复调用及力度切换都不叠加相数。设置列表独立45相（补八相），首页强刷和手动/周期/故障全刷优先，光学改善与实际延迟仍需实屏比较。
-
-English: Explicit local `--pico-main-clean` remains OFF by default and scoped to changed visible root tabs. Either source or destination being the shelf selects eight changed-white phases; other root pairs select six. Retain native changed-pixel actions and settling, hold all equal pairs, and add one release only when a source has no settling. GL37 totals43/45, DU20 totals26/28, and the24-phase shelf exit totals33 with eight drives and one release. Shelf pagination, list scrolling and reading retain independent outlets. The band cap is45 (50/52 compact ticks over eight bands); reader ripple remains41. Preserve timing, voltage/power, navigation and direction; never import S31 LUTs. Two strengths per six sources use at most34560B external LUT data plus metadata, and the band expansion uses at most45KiB; no extra frame or clear pass. Cache keys include strength, derived inputs rebase instead of stacking, and OOM/capacity/incompatibility retain the source. Settings lists keep their own45-phase profile and full/manual/periodic/fault outputs retain priority. Hardware acceptance is still required.
+English: Defaults are liquid-glass shelf6, Moon Clock4 and Home full refresh ON only when unconfigured/invalid. Preserve valid saved choices and explicit OFF, including across retained-data flashing and backup restore. The legacy shelf marker no longer overwrites valid styles; retired3/4 still map to2.
 
 ## S31阅读差分更新（2026-10-29） / S31 reader differences
 
-本次S31产品构建显式启用`--s31-reader-panel37`，CI同样覆盖该档。普通文字、图文及离图页原样采用Moku PR6的GL37加六相目标白，共43相、16级灰阶；六相包含原本已白的区域，黑/灰等值不重驱。水波纹继续原独立出口；手动及周期清理保留GC48。GL37关闭或分配失败时，完整GL48保留全部非等值迁移，追加六相目标白和三相保持，共57相，避免回到重驱等黑/灰的原表。
+用户2026-11-12决定：S31 产品/默认构建不再启用`--s31-pie`、`--s31-text-ripple`、`--s31-reader-panel37`，恢复原生48相阅读翻页与C像素算子——rc111 起这些实验默认开启，实机反馈翻页效果明显变差；这些实验改为仅显式本地开关。单独显式加`--s31-reader-panel37`时仍按 Moku PR6 的 GL37 加六相目标白，共43相、16级灰阶；六相包含原本已白的区域、黑/灰等值不重驱。水波纹继续原独立出口；手动及周期清理保留GC48。GL37关闭或分配失败时，完整GL48保留全部非等值迁移，追加六相目标白和三相保持，共57相，避免回到重驱等黑/灰的原表。
 
 速读黑白独立量化目标，使用本板所选DU完整相序再加四相目标白；原表有尾部保持时将四相插在其前。默认DU20共24相，带DU14实验的本地构建共18相；不改首页DU14白底维护、原表数据、VCOM、供电或扫描时钟。实际光学速度、白底闪动和残影需实屏比较；相数并非总响应时间。
 
-S31 builds and CI explicitly enable `--s31-reader-panel37`. Ordinary text/image/exits retain Moku PR6's exact GL37 plus six white-target phases:43 phases,16 grays,including equal whites while equal black/grays hold. Ripple keeps its own outlet and manual/periodic cleanup keeps GC48. With GL37 disabled or allocation failure, retain every changed GL48 transition plus six whites and three release holds,57 phases,without re-driving equal black/grays.
+User decision 2026-11-12: S31 product/default builds no longer enable `--s31-pie`, `--s31-text-ripple` or `--s31-reader-panel37`; restore the native48-phase reader turn and C pixel kernels because these experiments defaulted on from rc111 and visibly degraded page turns on hardware. They remain explicit local opt-ins. Passing `--s31-reader-panel37` explicitly alone still enables Moku PR6's exact GL37 plus six white-target phases:43 phases,16 grays,including equal whites while equal black/grays hold. Ripple keeps its own outlet and manual/periodic cleanup keeps GC48. With GL37 disabled or allocation failure, retain every changed GL48 transition plus six whites and three release holds,57 phases,without re-driving equal black/grays.
 
 FastBW independently quantizes targets and retains the selected native DU sequence plus four white-target phases,inserted before existing trailing holds. NativeDU20 totals24; a local DU14 experiment totals18. Root DU14 maintenance,vendor tables,VCOM,power and clocks stay separate. Optical timing/flash/ghosting still require hardware comparison; phase count is not total latency.
 
 
 ## 当前功能层 / Current feature layer
 
-两板共用首次引导、系统中英切换、文件递归搜索/图标视图/批量操作、书架排序与独立全屏/沉浸状态。引导及文件选择使用自己的底部操作栏，`navigation_visible` 显式决定系统导航是否占位；引导只在完成/跳过成功持久化后退出。引导通过本板 U 盘或 Wi-Fi 服务导入字体，不提供在线下载；设置保留独立在线目录。
-Both boards share setup, system localization, recursive file search/grid/batch actions, shelf sorting and independent fullscreen/immersive state. Setup and selection own their bottom action bars; `navigation_visible` controls system-navigation space. Setup exits only after a successful Finish/Skip commit and imports fonts through the board's USB/Wi-Fi service; Settings retains its separate online catalog.
+首次引导、系统中英切换、文件递归搜索/图标视图/批量操作、书架排序与独立全屏/沉浸状态均在 S31 上保留。引导及文件选择使用自己的底部操作栏，`navigation_visible` 显式决定系统导航是否占位；引导只在完成/跳过成功持久化后退出。引导通过本板 U 盘或 Wi-Fi 服务导入字体，不提供在线下载；设置保留独立在线目录。
+Setup, system localization, recursive file search/grid/batch actions, shelf sorting and independent fullscreen/immersive state remain on S31. Setup and selection own their bottom action bars; `navigation_visible` controls system-navigation space. Setup exits only after a successful Finish/Skip commit and imports fonts through the board's USB/Wi-Fi service; Settings retains its separate online catalog.
 
 阅读UI决定正文和信息栏范围；调用PR59已有差分/整块出口及原阅读波形，空闲后独立更新底部信息。不重新引入旧的d74b180驱动或本地缓存保护。`tools/pr59_driver_baseline_host_test.py`核验216个底层、配置及波形文件与用户指定PR提交一致。
 Reader UI owns body/metadata bounds and calls PR59's existing difference/full-area APIs and reader waveforms, updating footer metadata after idle. Do not reintroduce the d74b180 drivers or the superseded local cache guard. The driver-baseline host test verifies216 low-level/config/waveform files against the selected PR commit.
@@ -406,5 +380,3 @@ Reader taps2026-11-02: standard centre taps enter fullscreen; fullscreen body ta
 
 English: S31 lock power offers timed10-minute off,immediate off and keep-light. Keep-light has no automatic power-off deadline,including after cable changes; hardware light-sleep maintenance,physical wake/PIN and manual power-off retain existing paths. The existing shutdown_mode key retains0/1 and adds2; portable backups use the existing sleep field without a format change. Failed saves retain live policy. Pending wake font slots survive deferred activation. Verified wake/mount sessions clear old rejection; all load failures retry after1/3/10/30seconds,then every5minutes for persistent faults. Abnormal-boot protection and saved choices remain intact. Transfer performance requires device/network measurements; diagnostic queue/receive/write times and selected SD profiles are available in the existing info endpoint.
 
-Pico开机书架扫描保留原目录递归与首屏分组封面；每64本共用一次只读NVS进度会话，约2.5KiB PSRAM工作区不足或打开失败时回到逐本读取。目录已核验的普通文件大小/修改时间用于同版EPUB元数据缓存键，减少重复stat，大小/时间/版本失配仍拒绝；明确为普通非图书文件的目录项提前跳过stat，未知类型仍核验。加入时间索引采用有界16KiB stdio缓冲，不改记录、排序、封面缓存版本或硬件参数。Pico的shelf scan日志分列目录/进度/加入索引耗时，实际整机增幅须实测。
-Pico cold shelves keep recursive discovery and grouped covers. Up to64 progress queries share a read-only NVS session; bounded scratch/OOM/session failures fall back per book. Reuse directory-validated size/mtime for unchanged EPUB metadata keys, retaining mismatch rejection; known regular non-books skip redundant stat while unknown types remain checked. The first-added journal uses bounded16KiB stdio buffering without format/order/cache-version/hardware changes. Pico scan logs separate directory, progress and journal costs; device throughput still requires measurement.

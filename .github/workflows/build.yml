@@ -19,7 +19,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/kiiko-host-cc"
           ln -s "$(command -v clang)" "$RUNNER_TEMP/kiiko-host-cc/cc"
           echo "$RUNNER_TEMP/kiiko-host-cc" >> "$GITHUB_PATH"
-      - name: Board selection and Pico host-test view
+      - name: Board selection and shared host checks
         shell: bash
         run: |
           python3 tools/license_notices_host_test.py
@@ -30,7 +30,6 @@ jobs:
           python3 tools/pr59_driver_baseline_host_test.py
           python3 tools/board_layer_host_test.py
           python3 tools/board_selection_host_test.py
-          python3 tools/board_source_view.py --board pico --tests --output build/host/pico
       - name: S31 pipeline, power and cache regressions
         shell: bash
         run: |
@@ -80,7 +79,7 @@ jobs:
           build/book-tests/boot-state
       - name: Water-turn, display recovery, navigation and waveform regressions
         shell: bash
-        working-directory: build/host/pico
+        working-directory: build/host/metalio47
         run: |
           bash tools/run_water_turn_host_test.sh
           bash tools/run_display_host_test.sh
@@ -90,14 +89,9 @@ jobs:
           python3 tools/lock_pin_host_test.py
           python3 tools/lock_screen_host_test.py
           python3 tools/lock_style_host_test.py
-          python3 tools/pico_lock_clean_frame_host_test.py
           python3 tools/font_picker_catalog_host_test.py
           python3 tools/font_catalog_host_test.py
           python3 tools/power_double_click_host_test.py
-          python3 tools/pico_wake_option_host_test.py
-          python3 tools/pico_boot_power_key_host_test.py
-          python3 tools/pico_lock_hint_host_test.py
-          python3 tools/pico_lock_wait_host_test.py
           python3 tools/factory_reset_host_test.py
           python3 tools/factory_reset_ui_host_test.py
           python3 tools/book_excerpt_host_test.py
@@ -106,7 +100,6 @@ jobs:
           python3 tools/shelf_pager_host_test.py
           python3 tools/quick_layer_raster_host_test.py
           python3 tools/test_epd_difference_bounds.py --check-regression
-          python3 tools/pico_reader_crop_host_test.py
           python3 tools/test_s31_pie_dispatch.py
           python3 tools/test_lcd_frame_lifecycle.py
           sh tools/run_app_loop_host_tests.sh
@@ -122,35 +115,19 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        board: [pico, metalio47]
-    # v6.1 includes both Xtensa S3 and RISC-V S31; never share their build/config directories.
+        board: [metalio47]
+    # ESP-IDF v6.1 RISC-V S31; keep board build/config directories isolated.
     container: espressif/idf:v6.1
     steps:
       - uses: actions/checkout@v4
-      - name: Build and validate the selected board package
+      - name: Build and validate the Metalio S31 package
         shell: bash
         run: |
           . "$IDF_PATH/export.sh"
-          extra=()
-          if [ "${{ matrix.board }}" = metalio47 ]; then extra=(--s31-pie --s31-text-ripple --s31-reader-panel37); fi
           python tools/build_firmware.py --board "${{ matrix.board }}" \
             --idf-${{ matrix.board }} "$IDF_PATH" --python "$(command -v python)" \
-            --output build/boards "${extra[@]}"
-          if [ "${{ matrix.board }}" = pico ]; then
-            python tools/lowzag_host_test.py --component build/boards/pico/source/managed_components/defensiblelogic__lowzag
-          fi
-      - name: Verify transparent-cover pixels and cache reads
-        if: matrix.board == 'pico'
-        shell: bash
-        run: |
-          apt-get update -qq
-          apt-get install -y --no-install-recommends zlib1g-dev
-          python3 tools/board_source_view.py --board "${{ matrix.board }}" --tests --output build/bookmark-tests/${{ matrix.board }}
-          KIIKO_TEST_BOARD="${{ matrix.board }}" \
-          KIIKO_LIBPNG_PATH="$PWD/build/boards/${{ matrix.board }}/source/managed_components/espressif__libpng/libpng" \
-            python3 build/bookmark-tests/${{ matrix.board }}/tools/book_lock_bookmark_host_test.py
+            --output build/boards
       - name: S31 progressive JPEG bounded-memory regression
-        if: matrix.board == 'metalio47'
         shell: bash
         run: |
           . "$IDF_PATH/export.sh"
@@ -172,7 +149,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        board: [pico, metalio47]
+        board: [metalio47]
     steps:
       - uses: actions/checkout@v4
       - name: Select Clang for sanitizer host regressions
@@ -181,13 +158,11 @@ jobs:
           mkdir -p "$RUNNER_TEMP/kiiko-host-cc"
           ln -s "$(command -v clang)" "$RUNNER_TEMP/kiiko-host-cc/cc"
           echo "$RUNNER_TEMP/kiiko-host-cc" >> "$GITHUB_PATH"
-      - name: Materialize and test reader/UI/settings for this board
+      - name: Materialize and test reader/UI/settings for Metalio S31
         shell: bash
         run: |
-          if [ "${{ matrix.board }}" = metalio47 ]; then
-            python3 tools/metalio_reader_soft_turn_host_test.py
-            python3 tools/metalio_text_batch_host_test.py
-          fi
+          python3 tools/metalio_reader_soft_turn_host_test.py
+          python3 tools/metalio_text_batch_host_test.py
           python3 tools/board_source_view.py --board "${{ matrix.board }}" --tests --output build/host/${{ matrix.board }}
           cd build/host/${{ matrix.board }}
           mkdir -p build/book-tests/settings-card
@@ -195,21 +170,14 @@ jobs:
           build/book-tests/layout
           python3 tools/gen_english_hyphen.py --check
           python3 tools/english_hyphen_host_test.py
-          if [ "${{ matrix.board }}" = "metalio47" ]; then
-            python3 tools/metalio_du14_host_test.py
-            python3 tools/metalio_du14_white_host_test.py
-          fi
+          python3 tools/metalio_du14_host_test.py
+          python3 tools/metalio_du14_white_host_test.py
           python3 tools/title_font_host_test.py
           python3 tools/reader_hanzi_fallback_host_test.py
           python3 tools/ui_hanzi_host_test.py
-          python3 tools/pico_builtin_font_host_test.py
           python3 tools/file_names_host_test.py
           python3 tools/txt_navigation_host_test.py
-          if [ "${{ matrix.board }}" = "metalio47" ]; then
-            python3 tools/txt_volume_host_test.py --s31
-          else
-            python3 tools/txt_volume_host_test.py
-          fi
+          python3 tools/txt_volume_host_test.py --s31
           python3 tools/test_book_toc.py
           python3 tools/liquid_shelf_style_host_test.py
           python3 tools/shelf_guard_cache_host_test.py

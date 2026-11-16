@@ -14,21 +14,23 @@
 在仓库根目录、ESP-IDF 环境已启用时执行：
 
 ```bash
-python tools/build_firmware.py --board metalio47 --idf-metalio47 "$IDF_PATH" --python "$(command -v python)" --output build/boards --s31-pie --s31-text-ripple --s31-reader-panel37
+python tools/build_firmware.py --board metalio47 --idf-metalio47 "$IDF_PATH" --python "$(command -v python)" --output build/boards
 ```
 
 Windows PowerShell 示例（请把 IDF 路径替换为本机 v6.1 安装目录）：
 
 ```powershell
-python tools/build_firmware.py --board metalio47 --idf-metalio47 $env:IDF_PATH --python (Get-Command python).Source --output build/boards --s31-pie --s31-text-ripple --s31-reader-panel37
+python tools/build_firmware.py --board metalio47 --idf-metalio47 $env:IDF_PATH --python (Get-Command python).Source --output build/boards
 ```
 
 构建脚本负责选取板级源文件、调用 ESP-IDF 并验证输出包。实际产物路径以脚本末尾报告为准；临时中间文件保存在 `build/`。不要将本地构建目录或烧写包提交到源码仓库。
 
 ## CI
 
-`.github/workflows/build.yml` 包含板级构建和主机侧回归检查。推送到 GitHub 后可在仓库 **Actions** 页面查看结果。发布固件前仍需对目标设备型号、镜像分区布局和校验值做独立确认。
+`.github/workflows/build.yml` 仅构建 Metalio S31（`metalio47`）并运行 S31 主机侧回归；不再包含 Pico 矩阵。推送到 GitHub 后可在仓库 **Actions** 页面查看结果。发布固件前仍需对目标设备型号、镜像分区布局和校验值做独立确认。
+
+Windows 可用 `tools/build_board.ps1 -Board metalio_s31`（或 `metalio47`）。默认普通构建；需要 PIE/文字波纹/GL37 实验时加 `-S31ReaderExperiments`。
 
 ## 设备烧写
 
-本项目文档以源码构建为主。写入设备会覆盖固件分区并影响设备运行状态；务必确认板型、分区方案和镜像来源。不要把应用 OTA 镜像当作全量基础包，也不要在此 README 中引用个人串口号或本机绝对路径。
+本项目文档以源码构建为主。写入设备会覆盖固件分区并影响设备运行状态；务必确认 Metalio S31 分区方案和镜像来源。不要把应用 OTA 镜像当作全量基础包，也不要在此 README 中引用个人串口号或本机绝对路径。

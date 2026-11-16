@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: LicenseRef-Kiikoread-Personal-Study-1.0
-"""中文：S31/Pico补字逐字节相同、全部旧UI像素不变，以及真实启动画布检查。
-English: S31/Pico supplement identity, unchanged legacy UI pixels and the actual startup canvas check.
+"""中文：S31补字覆盖、旧UI像素与真实启动画布检查（仅 Metalio S31）。
+English: S31 supplement coverage, legacy UI pixels and startup canvas checks (Metalio S31 only).
 """
 from pathlib import Path
 import hashlib,json,struct,subprocess,tempfile,zlib
 from font_hanzi_host_support import font_codepoints
 from home_cover_cache_host_test import function
 R=Path(__file__).resolve().parents[1]
-marker=R/'.kiiko-source-view.json';source=Path(json.loads(marker.read_text())['source']) if marker.exists() else R
-pico=source/'boards/pico/src/main/assets';s31=source/'boards/metalio47/src/main/assets'
+marker=R/'.kiiko-source-view.json'
+source=Path(json.loads(marker.read_text())['source']) if marker.exists() else R
+s31=source/'boards/metalio47/src/main/assets'
 aa=(s31/'ui-hanzi.bin').read_bytes();native=(s31/'builtin.ttf').read_bytes()
-assert aa==(pico/'ui-hanzi.bin').read_bytes() and native==(pico/'builtin.ttf').read_bytes()
 magic,count,px,block=struct.unpack_from('<4sIII',aa);assert (magic,count,px,block)==(b'PIF4',6030,24,32)
 chars=struct.unpack_from('<'+'H'*count,aa,16);at=16+count*2
 index=struct.unpack_from('<'+'I'*((count+31)//32+1),aa,at);at+=len(index)*4
@@ -26,8 +26,12 @@ for n in range(len(index)-1):
 assert hashlib.sha256(mono).hexdigest()=='c9ab41911c03df18540b84ed6aee9121022f59f758d3b5ae3b288005218c97b3'
 covered=font_codepoints(native)|set(chars);assert len(covered)==7668
 common={int(line.split('#',1)[0].strip(),16) for line in (source/'tools/fixtures/reader-common-6500.txt').read_text().splitlines() if line.split('#',1)[0].strip()};assert common<=covered
+# Advances/bearings live in shared main/font for S31; board overlay must not diverge if present.
+board_font=source/'boards/metalio47/src/main/font/ttf_font.c'
+shared_font=source/'main/font/ttf_font.c'
+font_source=board_font if board_font.is_file() else shared_font
 for name in ['reader_missing_advance','ttf_text_left_bearing_px']:
- assert function(name,source/'main/font/ttf_font.c')==function(name,source/'boards/pico/src/main/font/ttf_font.c'),name
+ assert function(name,shared_font)==function(name,font_source),name
 cmake=(source/'main/CMakeLists.txt').read_text().split('\nelse()',1)[0];assert '"assets/lock_4bpp.bin"' not in cmake
 boot=source/'boards/metalio47/src/main/app_main.c';assert '_binary_lock_4bpp' not in boot.read_text()
 unit=r'''
@@ -48,4 +52,4 @@ with tempfile.TemporaryDirectory() as folder:
  p=Path(folder);(p/'test.c').write_text(unit)
  subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-fsanitize=address,undefined',str(p/'test.c'),'-o',str(p/'test')],check=True)
  subprocess.run([str(p/'test')],check=True)
-print('PASS: S31/Pico identical PIF4 and native face;7668 characters/all common6500; all6030 legacy UI glyph pixels/metrics unchanged; exact advances/bearings shared')
+print('PASS: S31 PIF4 and native face;7668 characters/all common6500; all6030 legacy UI glyph pixels/metrics unchanged; exact advances/bearings shared')

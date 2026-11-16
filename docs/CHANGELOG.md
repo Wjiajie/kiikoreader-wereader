@@ -1,5 +1,13 @@
 # 版本变更 / Changelog
 
+## 2026-11-16 · 本仓库 Metalio-only + rc114 对齐与安全加固
+
+- 移除 Read Pico 板型；构建/CI/文档仅保留 Metalio S31（`metalio47`）。
+- 版本基线对齐官方 kiikoread Metalio S31 **0.3.3-rc114**（无名科技 CloudZao Burner 当前无独立阅读固件条目；阅读固件以 [kiikoread.com](https://kiikoread.com/) / `wegooo-cell/read-pico-reader` 发布为准）。默认构建不再附带 PIE/文字波纹/GL37 实验开关。
+- 安全：恢复出厂清除 `weread` NVS；PIN PBKDF2 迭代提升并兼容旧记录；TF 配置备份不再写入 Wi-Fi 密码；传书热点口令改为设备随机生成，网页管理要求会话令牌；星曈 `APP_SECRET` 改为构建/本地密钥注入；阅读器退出先停预绘再删任务。
+- OTA 仍依赖 TLS + feed SHA256（无独立代码签名），属已知残留风险。
+
+
 ## 最终源码与缓存验证 / Final source and cache verification — 2026-11-16
 
 - 微信读书图片地址被白名单拒绝时，只记录协议、主机字段和 URL 长度，不记录签名查询参数；确定性拒绝不再重试。设备缓存书籍 `36213094` 实测 32/32 章完成，58 张远程图片全部下载成功；另有 1 个相对路径引用被安全过滤，未影响章节和整书缓存完成。该地址不是 CDN 主机名，非 HTTPS 绝对图片地址不会被当作远程图下载。最终 Metalio S31 16 MiB 原始全闪存包及刷写说明见 `FULL_FLASH_16MB.md`。
@@ -14,6 +22,11 @@
 - 真机日志显示双任务预取版单章预取约 66 秒，并持续触发 IDLE 看门狗；同时每章额外写入、`fsync` 并回读 SD 临时文件。已改为单 worker 顺序下载并直接将 PSRAM 内容交给 EPUB 组装，删除章节临时落盘/回读和预取任务；章节组装后让出一个 RTOS tick。ESP-IDF v6.1 增量构建通过，S31 应用镜像 5,204,192 bytes，SHA-256 `7ba47e4813d00e7a89b047aa6faf6fe1ca45214f35490601a7d6ff392c63739e`。尚未刷写，需实机对照缓存速度与看门狗；未发布。
   Device logs showed about 66 seconds per prefetched chapter and repeated IDLE watchdog alerts. Each chapter also incurred an extra SD write, `fsync` and readback. Caching now uses one worker, fetches chapters sequentially, passes PSRAM content directly to EPUB assembly, removes staging-file I/O and yields one RTOS tick after each chapter. The ESP-IDF v6.1 incremental build passed; the S31 app image is 5,204,192 bytes with SHA-256 `7ba47e4813d00e7a89b047aa6faf6fe1ca45214f35490601a7d6ff392c63739e`. Not flashed; device speed and watchdog behavior still need comparison. Not published.
 
+## Metalio S31 0.3.3-rc114 — 2026-11-16
+
+- **S31（WeRead 分支合入上游 rc113→rc114）**：默认构建恢复原生 48 相阅读翻页（实验档改为显式开关）；固化 AA 微调默认值；支持星瞳云 `.xth` 壁纸；书架成品封面预热与切页/开书可打断；短锁屏保留 TF 挂载并按设置单击/双击唤醒。保留微信读书书架、账户、缓存与同步能力，不引入 Pico 专用改动。
+- **S31 (WeRead fork port of upstream rc113→rc114)**: restore native 48-phase reader turns by default (experiments become explicit opt-ins); bake AA tuning defaults; accept Xteink `.xth` wallpapers; prewarm complete shelf covers with cancellable page/open work; retain TF mounts on brief locks and honor single/double-tap wake. Keep WeRead shelf/account/cache/sync features; Pico-only changes are not brought in.
+
 ## Metalio S31 0.3.3-rc113 — 2026-11-12
 
 - 修复首次进入书架时只显示底部封面、加载提示停留的问题。书架先显示书名和已就绪的封面，后台完成一批就补画一批，加载结束后自动清除提示。
@@ -26,6 +39,19 @@
 - **S31**：合入 Moku 的书架封面缓存与失败重试、低内存 Wi-Fi 和传书优化、阅读页脚本章页码、跨文件脚注修复与手动屏幕修复。星瞳云同步上报 S31 型号 `metalio47`。
 
 Both boards scroll about half a page after a quick flick and clear list ghosting on release. Reader caches use `.kiikoread`. PICO restores the RC104 reader and home refresh behavior and verifies panel power-off before light sleep. S31 incorporates Moku’s shelf, networking, reader and panel-repair improvements.
+
+## 本地测试 / Local test — 2026-11-12
+
+- S31 抗锯齿微调：调试面板新增 AA 页（覆盖率 gamma、补字边缘偏置、补字墨量），实机标定后固化默认 gamma 0.800、边缘偏置 256、墨量 122%；Pico 默认不变。本地测试，未发布官网/OTA。
+  S31 AA tuning: debug panel adds an AA page (coverage gamma, supplement edge bias, supplement ink). Hardware-tuned defaults baked as gamma 0.800, edge bias 256, ink 122%; Pico defaults unchanged. Local test only; nothing published.
+
+- S31 XTH 云壁纸：星瞳云下发的壁纸为 `.xth`（22 字节小端头 + 双位平面、列主序、4 级灰阶），此前被当作不支持类型拒绝。现在云同步会校验头部/尺寸并保存到 `Pictures`；设置壁纸/锁屏、图片页、阅读背景和文件管理均支持 `.xth` 的预览与选用（解码按官方 xtx SPEC：从右到左列主序、MSB 在上，4 级映射白/深灰/浅灰/黑并按比例裁切填满）。本地测试，未发布官网/OTA。
+  S31 XTH cloud wallpapers: the Xteink cloud delivers wallpapers as `.xth` (22-byte little-endian header plus column-major dual bit-planes, four gray levels), which used to be rejected as an unsupported type. Cloud sync now validates the header/size and saves them to `Pictures`; wallpapers/lock, the image page, reader backgrounds and Files all preview and select `.xth`. Local test only; nothing is published.
+
+## 本地测试 / Local test — 2026-11-12
+
+- S31 阅读翻页回退：rc111 起产品/CI 构建默认开启的 S31 实验档（`--s31-pie`、`--s31-text-ripple`、`--s31-reader-panel37`）导致实机阅读翻页效果明显变差；现产品/默认构建恢复原生48相阅读翻页与C像素算子，实验改为仅显式本地开关，且只作用于 S31（Pico 不变）。以 rc112 源码的无实验构建（sha256 `6d73dced71a3be1a44fd6916738756f6c55ee20b9579978a9d2048c24313f576`）真机验证翻页效果恢复。本地测试，未发布官网/OTA。
+  S31 reader-turn rollback: the S31 experiments (`--s31-pie`, `--s31-text-ripple`, `--s31-reader-panel37`) that product/CI builds enabled by default from rc111 visibly degraded page turns on hardware. Product/default builds now restore the native 48-phase reader turn and C pixel kernels; the experiments remain explicit local opt-ins and affect S31 only (Pico unchanged). Verified on hardware with an experiment-free build of the rc112 source (sha256 `6d73dced71a3be1a44fd6916738756f6c55ee20b9579978a9d2048c24313f576`). Local test only; nothing is published.
 
 ## 本地测试 / Local test — 2026-11-11
 

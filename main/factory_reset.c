@@ -14,6 +14,8 @@ esp_err_t app_factory_reset(void) {
         KIIKO_BOARD_SETTINGS_NAMESPACE, KIIKO_BOARD_STARTUP_NAMESPACE,
 #if KIIKO_BOARD_METALIO47
         "metalio_wifi", "metalio_light", "metalio_haptic",
+        // 微信读书登录态与本地统计；重置后需重新扫码。/ WeRead session and local stats; rescans after reset.
+        "weread",
 #else
         "rp_wifi",
 #endif

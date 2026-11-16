@@ -1,6 +1,6 @@
 # kiikoreader WeRead（微信读书）固件
 
-面向 **kiikoreader Metalio S31** 的社区固件源码项目，以 `0.3.3-rc113` 为固件基线，集成微信读书书架、账户、书籍缓存、进度同步与阅读时长上报。项目沿用 kiikoreader 的本地书架、阅读器和系统字体设置。
+面向 **kiikoreader Metalio S31** 的社区固件源码项目，以 `0.3.3-rc114` 为固件基线，集成微信读书书架、账户、书籍缓存、进度同步与阅读时长上报。项目沿用 kiikoreader 的本地书架、阅读器和系统字体设置。
 
 > 本项目不是腾讯、微信读书或 Metalio/kiikoread 官方发布。微信读书接口为非公开服务接口，服务端策略、登录校验或网络要求变化可能影响功能。
 
@@ -24,7 +24,7 @@ English: [README.en.md](README.en.md)
 需要 ESP-IDF **v6.1**。在 ESP-IDF 环境中，从仓库根目录构建：
 
 ```bash
-python tools/build_firmware.py --board metalio47 --idf-metalio47 "$IDF_PATH" --python "$(command -v python)" --output build/boards --s31-pie --s31-text-ripple --s31-reader-panel37
+python tools/build_firmware.py --board metalio47 --idf-metalio47 "$IDF_PATH" --python "$(command -v python)" --output build/boards
 ```
 
 仓库的 GitHub Actions 工作流会运行板级构建和主机侧检查。设备刷写前请确认具体板型、分区布局和镜像类型。
@@ -41,7 +41,7 @@ python tools/build_firmware.py --board metalio47 --idf-metalio47 "$IDF_PATH" --p
 
 ## 完整固件刷写包
 
-Metalio S31 0.3.3-rc113 最终版 16 MiB 全闪存镜像与 Windows 使用说明见 [`docs/FULL_FLASH_16MB.md`](docs/FULL_FLASH_16MB.md)。镜像从 `0x0` 写入并覆盖整片闪存，会清除设备设置、账户与内部缓存；下载链接和校验文件位于 [GitHub Release](https://github.com/YIYO-Designer/kiikoreader-wereader/releases/latest)。
+Metalio S31 0.3.3-rc114 最终版 16 MiB 全闪存镜像与 Windows 使用说明见 [`docs/FULL_FLASH_16MB.md`](docs/FULL_FLASH_16MB.md)。镜像从 `0x0` 写入并覆盖整片闪存，会清除设备设置、账户与内部缓存；下载链接和校验文件位于 [GitHub Release](https://github.com/YIYO-Designer/kiikoreader-wereader/releases/latest)。
 
 ## 许可
 
