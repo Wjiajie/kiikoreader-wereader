@@ -69,6 +69,7 @@ static void ttf_font_unload(void){font_live=false;++closes;}
 static int ttf_font_open_builtin(void){builtin=true;return ESP_OK;}
 static bool ttf_font_ready(void){return true;}
 static bool ttf_font_is_builtin(void){return builtin;}
+static const char *ttf_font_path(void){return builtin?"builtin":"sd.ttf";}
 static void ui_text_set_system_font(bool on){assert(!on);}
 static void app_book_shelf_prefetch_reset(void){}
 static void ui_avatar_invalidate(void){}
@@ -76,11 +77,16 @@ static void book_lock_collage_invalidate(void){}
 static bool read_pico_sd_needs_recovery(void){return !sd_suspended&&!mounted&&!mounting&&!known_no_media;}
 static int read_pico_sd_start_probe(void){assert(0);return ESP_FAIL;}
 static int read_pico_sd_start_recovery(void){assert(!font_live&&!book_live&&!mounted&&!usb&&!ota);mounting=true;++mounts;return ESP_OK;}
+static int read_pico_sd_invalidate_io(void){return ESP_OK;}
 static bool app_font_recover_media(void){assert(mounted&&verified&&!mounting);++recovered;if(!abnormal){font_live=true;builtin=false;font_generation=generation;}return !abnormal;}
 static void page_lost(app_ctx_t *c){(void)c;++lost;}
 static void page_ready(app_ctx_t *c){(void)c;assert(mounted&&verified&&!mounting);++ready;}
 static const app_desc_t app_book={page_lost,page_ready};
 static void app_book_wake_file_failed(app_ctx_t *ctx){(void)ctx;assert(book_error!=ESP_OK);++file_lost;book_live=false;}
+#define TAG "app_loop"
+#define ESP_LOGI(tag, fmt, ...) do { (void)(tag); if (0) printf((fmt), ##__VA_ARGS__); } while (0)
+#define ESP_LOGW ESP_LOGI
+static const char *esp_err_to_name(int e){(void)e;return "error";}
 '''
 for name in ('lock_media_result', 'lock_resume_media_io', 'lock_resume_io_service',
              'app_sleep_media_ready', 'app_sleep_media_failed', 'app_sleep_media_pending',
@@ -120,14 +126,14 @@ int main(void){
  assert(lock_resume_media_io(0)==ESP_OK&&!s_lock_io_pending&&!mounts);
  assert(!poll(0)&&!mounts);
 
- // A book or font failure on an intact card stays file-local.
+ // Three failed reopen attempts mark wake IO failed; consumers drain before the next mount.
  reset();font_error=ESP_FAIL;
  assert(!poll(0)&&fonts==1&&book_live);
  assert(!poll(1000)&&fonts==2);
- assert(poll(2000)&&fonts==3&&book_live&&!s_lock_io_pending&&!lost&&!closes&&!mounts&&recovered==1);
+ assert(poll(2000)&&fonts==3&&closes==3&&lost==1&&!font_live&&!book_live&&!s_lock_io_pending&&!mounts);
  reset();book_error=ESP_FAIL;
  assert(!poll(0)&&!poll(1000));
- assert(poll(2000)&&file_lost==1&&!s_lock_io_pending&&!lost&&!mounts&&recovered==1);
+ assert(poll(2000)&&closes==3&&lost==1&&!font_live&&!book_live&&!s_lock_io_pending&&!mounts);
 
  // Health-confirmed loss closes all old files before recovery. Busy owners defer initiation.
  reset();font_error=ESP_FAIL;
@@ -152,6 +158,6 @@ int main(void){
 }
 '''
     (p / 'test.c').write_text(unit)
-    subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined',
-                    str(p / 'test.c'), '-o', str(p / 'test')], check=True)
+    subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', '-Wno-unused-function',
+                    '-fsanitize=address,undefined', str(p / 'test.c'), '-o', str(p / 'test')], check=True)
     subprocess.run([str(p / 'test')], check=True)

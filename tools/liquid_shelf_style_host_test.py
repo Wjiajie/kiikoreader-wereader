@@ -91,18 +91,23 @@ static int ui_content_width(void){return 612;}
 '''
 unit+='\n'.join(line for line in (root/'main/ui/ui_book_manage_layout.h').read_text().splitlines() if not line.startswith(('#include','#pragma')))+'\n'
 unit+='static bool s_bulk_grid;\n'
-for name in ('shelf_rows','row_rect','shelf_cover_image'):
+unit+='typedef struct{int unused;}app_ctx_t;\n'
+unit+='static char s_notice[96];\n'
+unit+='static struct{bool tracking;int origin_offset,origin_y;}s_list_drag;\n'
+unit+='static bool settings_drag_gesture(app_ctx_t*ctx,const ui_gesture_event_t*ev,int*offset,int limit,app_redraw_t*motion){(void)ctx;(void)ev;(void)offset;(void)limit;(void)motion;return false;}\n'
+unit+='static app_redraw_t shelf_style_finish(app_ctx_t*ctx){(void)ctx;s_page=SETTINGS_MAIN;return APP_REDRAW_PAGE;}\n'
+for name in ('shelf_style_slots','shelf_slot_rect','shelf_slot_cover','shelf_rows','row_rect','shelf_cover_image'):
     unit += function(name,root/'main/apps/app_book.c')+'\n'
 unit += catalog + '\n' + count + '\n' + function('draw_style_thumbnail', source) + '\n'
 unit += 'static void paint(uint8_t *fb){' + render + '}\n'
 unit += function('scroll_gesture', source) + '\n'
-unit += 'static app_redraw_t scroll_event(const ui_gesture_event_t *ev){' + scroll + 'return APP_REDRAW_NONE;}\n'
-unit += 'static app_redraw_t tap(int x,int y){ui_gesture_event_t e={.type=UI_GESTURE_TAP,.x0=x,.y0=y};const ui_gesture_event_t *ev=&e;' + choose + 'return APP_REDRAW_NONE;}\n'
+unit += 'static app_redraw_t scroll_event(const ui_gesture_event_t *ev){app_ctx_t storage={0};app_ctx_t *ctx=&storage;' + scroll + 'return APP_REDRAW_NONE;}\n'
+unit += 'static app_redraw_t tap(int x,int y){app_ctx_t storage={0};app_ctx_t *ctx=&storage;ui_gesture_event_t e={.type=UI_GESTURE_TAP,.x0=x,.y0=y};const ui_gesture_event_t *ev=&e;' + choose + 'return APP_REDRAW_NONE;}\n'
 unit += r'''
 int main(void){
  const int expected[]={1,2,6,5};uint8_t fb=0;
  for(unsigned choice=0;choice<4;++choice){
-  style=expected[choice];int rows=style==5?4:9;assert(shelf_rows()==rows);
+  style=expected[choice];int rows=style==5?8:9;assert(shelf_rows()==rows);
   for(int i=0;i<rows;++i){EpdRect hit=row_rect(i),cover=shelf_cover_image(i);
    assert(cover.x>=36&&cover.x+cover.width<=648&&cover.y>=184&&cover.y+cover.height<=972);
    assert(cover.x>=hit.x&&cover.x+cover.width<=hit.x+hit.width&&cover.y>=hit.y&&cover.y+cover.height<=hit.y+hit.height);
@@ -132,5 +137,5 @@ int main(void){
 with tempfile.TemporaryDirectory() as folder:
     path = Path(folder)
     (path / 'test.c').write_text(unit)
-    subprocess.run(['cc','-Dshelf_display_style=app_settings_shelf_style','-std=c11','-Wall','-Wextra','-Werror','-Wno-unused-function','-fsanitize=address,undefined',str(path/'test.c'),'-o',str(path/'test')],check=True)
+    subprocess.run(['cc','-Dshelf_display_style=app_settings_shelf_style','-std=c11','-Wall','-Wextra','-Werror','-Wno-unused-function','-Wno-unused-variable','-fsanitize=address,undefined',str(path/'test.c'),'-o',str(path/'test')],check=True)
     subprocess.run([str(path/'test')],check=True)
