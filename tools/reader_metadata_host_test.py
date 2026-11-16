@@ -33,7 +33,6 @@ static bool immersive;
 static bool app_settings_reader_immersive(void){return immersive;}
 static bool s_reader_fullscreen=false,s_toolbar,s_clear_confirm,s_reader_footer_pending,s_save_failed;
 static const char *s_text="body";
-static size_t s_chapter=36,total_chapters=48;
 static int64_t s_reader_footer_due_ms;
 static int calls,guards,text_calls,bar_calls,fill_calls,status_calls;
 static void ui_nav_status(uint8_t *fb){(void)fb;++status_calls;}
@@ -51,7 +50,9 @@ static void ui_hairline(uint8_t *fb,int y,int x,int width,int gray){(void)fb;ass
 static enum EpdDrawError error;
 static const char *expected_chapter="Chapter name";
 static unsigned percent(size_t page){return (unsigned)page;}
-static size_t book_chapter_count(void){return total_chapters;}
+static size_t layout_pages=100;
+static size_t book_layout_page_count(void){return layout_pages;}
+static bool app_book_status_bar_visible(void){return true;}
 static void fit_fixed_text(char *text,int px,int width){assert(px>0&&width>0);(void)text;}
 static int ui_text_fixed_width_px(int px,const char *text){return (int)strlen(text)*px/2;}
 static void reader_footer_chapter_name(char *text,size_t cap){snprintf(text,cap,"%s",expected_chapter);}
@@ -59,7 +60,7 @@ static void ui_fill_rect_fast(EpdRect r,int color,uint8_t *fb){(void)fb;assert(c
 static void ui_reader_background_paint(uint8_t *fb,EpdRect r,bool overlay){(void)fb;(void)r;assert(overlay);}
 static void ui_text_fixed_vc(uint8_t *fb,int x,int y,int px,const char *text,int align,bool inverted){
  (void)fb;assert(y==(s_reader_fullscreen?1180:1060)&&px==21&&!inverted);
- if(x==652){assert(align==EPD_DRAW_ALIGN_RIGHT&&!strcmp(text,"37/48  74%"));}
+ if(x==652){assert(align==EPD_DRAW_ALIGN_RIGHT&&!strcmp(text,"75/100  74%"));}
  else assert(x==32&&align==EPD_DRAW_ALIGN_LEFT&&!strcmp(text,expected_chapter));
  ++text_calls;
 }
@@ -79,9 +80,9 @@ for name in ['draw_reader_header','progress_rect','reader_footer_progress', 'dra
     unit += function(name, source)+'\n'
 unit += r'''
 int main(void){
- char text[48];reader_footer_progress(text,sizeof(text),74);assert(!strcmp(text,"37/48  74%"));
- total_chapters=0;reader_footer_progress(text,sizeof(text),0);assert(!strcmp(text,"0/0  0%"));total_chapters=48;
- s_chapter=99;reader_footer_progress(text,sizeof(text),100);assert(!strcmp(text,"48/48  100%"));s_chapter=36;
+ char text[48];reader_footer_progress(text,sizeof(text),74);assert(!strcmp(text,"75/100  74%"));
+ layout_pages=0;reader_footer_progress(text,sizeof(text),0);assert(!strcmp(text,"0/0  0%"));layout_pages=100;
+ reader_footer_progress(text,sizeof(text),100);assert(!strcmp(text,"100/100  100%"));
  s_reader_fullscreen=false;uint8_t none=0;
  for(int style=0;style<2;++style){
   immersive=style;s_reader_favorite=style;text_calls=bar_calls=fill_calls=status_calls=0;title_calls=back_calls=favorite_calls=0;
@@ -126,6 +127,6 @@ with tempfile.TemporaryDirectory(prefix='reader-metadata-') as temporary:
     work=Path(temporary)
     (work/'epdiy.h').write_text('#pragma once\ntypedef struct{int x,y,width,height;}EpdRect;\n')
     (work/'test.c').write_text(unit)
-    subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-fsanitize=address,undefined',
+    subprocess.run(['cc','-std=c11','-D_DEFAULT_SOURCE','-Wall','-Wextra','-Werror','-fsanitize=address,undefined',
                     '-DKIIKO_BOARD_METALIO47='+str(int('metalio47' in str(ROOT))),'-I'+str(work),'-I'+str(ROOT/'main/ui'),str(work/'test.c'),'-o',str(work/'test')],check=True)
     subprocess.run([str(work/'test')],check=True)

@@ -421,7 +421,6 @@ void app_book_shelf_prefetch_cancel(void) {}
 void app_book_shelf_prefetch_reset(void) {}
 void app_book_shelf_prefetch_first(app_ctx_t *ctx) { (void)ctx; }
 
-bool ble_pt_take_standby(void) { return false; }
 bool cst836u_peek_touch(void *h, cst836u_touch_t *t) { return cst836u_read(h, t) == 0 && t->touched; }
 
 int main(void) {

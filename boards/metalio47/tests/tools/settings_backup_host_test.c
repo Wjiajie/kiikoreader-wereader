@@ -369,9 +369,9 @@ int main(void) {
     assert(test_loaded_fast == 1);
     assert(backup_wifi_valid(&saved_network) && saved_network.credentials.configured &&
            !strcmp(saved_network.credentials.ssid, "Home_2.4G") &&
-           !strcmp(saved_network.credentials.password, "password123"));
-    // 旧备份仍可恢复，但退出的极速测试位被忽略；其他配置与网络继续恢复。
-    // Accept old backups while ignoring the retired fast-test bit; restore other settings and WiFi.
+           !saved_network.credentials.password[0]);
+    // 导出抹掉 Wi‑Fi 口令；旧备份仍可恢复，但退出的极速测试位被忽略。
+    // Exports strip Wi‑Fi passwords; accept old backups while ignoring the retired fast-test bit.
     saved = fopen(BACKUP_FILE, "r+b");
     settings_backup_v1_t legacy_header; uint8_t legacy_ext[7];
     assert(saved && fread(&legacy_header, 1, sizeof(legacy_header), saved) == sizeof(legacy_header));
@@ -459,9 +459,7 @@ int main(void) {
     assert(app_settings_reader_key_action(0)==APP_READER_KEY_TOOLS && app_settings_reader_key_action(1)==APP_READER_KEY_FULLSCREEN && app_settings_reader_key_action(2)==APP_READER_KEY_REFRESH);
     assert(app_settings_main_refresh_mode()==APP_MAIN_REFRESH_WATER && loaded_main_mode==2);
     assert(app_settings_system_font_size() == 200);
-    assert(wifi_imports == 1 && saved_wifi.configured &&
-           !strcmp(saved_wifi.ssid, "Home_2.4G") &&
-           !strcmp(saved_wifi.password, "password123"));
+    assert(wifi_imports == 0 && !saved_wifi.configured);
     assert(app_settings_book_indent_adjust()==-7&&loaded_adjust==13);
     assert(s_book_px == 62 && s_book_tracking == 8 && s_book_indent == 3 &&
            s_book_rule_offset == 7 && s_reader_full_pages == 5);
@@ -547,7 +545,7 @@ int main(void) {
     unsigned prior_wifi=wifi_imports,prior_history=history_restores;
     s_reader_hold_action=APP_READER_KEY_HOME;assert(app_settings_backup_restore()==ESP_OK);
     assert(app_settings_reader_hold_action()==APP_READER_KEY_HOME && app_settings_main_fast_refresh() && app_settings_book_indent_adjust()==0);
-    assert(wifi_imports==prior_wifi+1&&history_restores==prior_history+1);
+    assert(wifi_imports==prior_wifi&&history_restores==prior_history+1);
     assert(app_settings_reader_key_action(0)==saved_keys.actions[0]&&app_settings_reader_key_action(1)==saved_keys.actions[1]&&app_settings_reader_key_action(2)==saved_keys.actions[2]);
     assert(app_settings_backup_save()==ESP_OK); // Continue v8 conversion from current v11.
     // v8 的旧实验位不启用新模式，既有备份仍可恢复。
@@ -619,7 +617,7 @@ int main(void) {
     assert(app_settings_backup_restore() == ESP_OK && s_book_px == 70 &&
            s_reader_full_pages == 0 && app_settings_book_reading_line_offset() == -8 &&
            s_staged_shutdown);
-    assert(!strcmp(saved_wifi.ssid, "Home_2.4G"));
+    assert(!strcmp(saved_wifi.ssid, "Other_2.4G")); /* Passwordless export does not re-import Wi‑Fi. */
 
     /* PICOSET3 backups predate the shutdown choice and restore the safe off default. */
     FILE *file = fopen(BACKUP_FILE, "rb");
@@ -646,7 +644,7 @@ int main(void) {
     assert(!strcmp(app_settings_books_dir(),"/sdcard/books")&&!strcmp(app_settings_fonts_dir(),"/sdcard/fonts"));
 
     assert(!s_home_full_refresh && !strcmp(s_device_name, "Metalio S31") && !s_status_signature[0]);
-    assert(!strcmp(saved_wifi.ssid, "Home_2.4G")); /* Old backups leave network alone. */
+    assert(!strcmp(saved_wifi.ssid, "Other_2.4G")); /* Old backups leave network alone. */
 
     /* Existing PICOSET2 backups remain readable, with centered guide lines. */
     file = fopen(BACKUP_FILE, "rb");
@@ -682,13 +680,14 @@ int main(void) {
     assert(fclose(file) == 0);
     s_book_indent = 0;
     assert(app_settings_backup_restore() == ESP_OK && s_book_indent == 2);
-    /* A backup without a configured network clears an existing saved network. */
+    /* Passwordless / unconfigured Wi‑Fi blocks leave on-device credentials alone. */
     memset(&saved_wifi, 0, sizeof(saved_wifi));
     assert(app_settings_backup_save() == ESP_OK);
     saved_wifi.configured = 1;
     strlcpy(saved_wifi.ssid, "Temporary", sizeof(saved_wifi.ssid));
     strlcpy(saved_wifi.password, "temporary123", sizeof(saved_wifi.password));
-    assert(app_settings_backup_restore() == ESP_OK && !saved_wifi.configured);
+    assert(app_settings_backup_restore() == ESP_OK && saved_wifi.configured &&
+           !strcmp(saved_wifi.ssid, "Temporary"));
 
     file = fopen(BACKUP_FILE, "r+b");
     assert(file);
