@@ -72,6 +72,10 @@ static void before_lock(app_ctx_t *ctx){(void)ctx;++checkpoints;invalidate_prep(
 static void retry_progress(void){++retries;s_save_failed=save_fails;}
 static void app_restart_host(void){assert(checkpoints&&retries&&!s_save_failed);++restarts;}
 static bool ui_rect_hit(EpdRect r,int x,int y){return x>=r.x&&y>=r.y&&x<r.x+r.width&&y<r.y+r.height;}
+static int app_settings_book_weight_fine(void){return 0;}
+static bool app_settings_book_antialias(void){return true;}
+static void ttf_set_stroke_adjust_fine(int n){(void)n;}
+static void ttf_set_antialias(bool b){(void)b;}
 '''
 unit+='#if KIIKO_BOARD_METALIO47\n#define FONT_STAGE_PUBLISHED() (builtin=ttf_font_path_is_builtin(active))\n'+FIXTURE+'\n#endif\n'
 for name in ('reader_font_choice_begin','reader_font_choice_finish','reader_font_recovery_reset',
