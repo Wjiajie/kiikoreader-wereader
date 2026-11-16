@@ -9,7 +9,14 @@ SOURCE=Path(json.loads(marker.read_text())['source']) if marker.exists() else RO
 j=json.loads((SOURCE/'tools/fixtures/pr59-driver-baseline.json').read_text())
 overrides=j.get('approved_overrides',{})
 assert set(overrides)<=set(j['sha256'])
+checked=skipped=0
 for name,digest in j['sha256'].items():
+    path=SOURCE/name
+    # Pico board support removed; keep fixture history without failing CI on deleted paths.
+    if name.startswith('boards/pico/') and not path.is_file():
+        skipped+=1
+        continue
     expected=overrides[name]['sha256'] if name in overrides else digest
-    assert hashlib.sha256((SOURCE/name).read_bytes()).hexdigest()==expected,name
-print('PASS:',len(j['sha256'])-len(overrides),'PR59 driver/config/waveform files and',len(overrides),'explicitly approved overrides match')
+    assert hashlib.sha256(path.read_bytes()).hexdigest()==expected,name
+    checked+=1
+print('PASS:',checked,'PR59 driver/config/waveform files (',len(overrides),'approved overrides;',skipped,'removed pico paths skipped)')
