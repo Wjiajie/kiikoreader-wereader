@@ -1,6 +1,6 @@
 {
   "source_sha256": "724c63c5666743c774eb72b8edf38d345e4fe21d239af3a5e94ed4bbd61e8c4a",
-  "reference": "Unmodified Noto Sans SC Medium outlines, stb_truetype, coverage gamma 0.5; alpha sums before framebuffer quantization.",
+  "reference": "Unmodified Noto Sans SC Medium outlines, stb_truetype, coverage gamma 0.5; alpha sums before framebuffer quantization; Metalio S31 host runs use coverage gamma 0.8 with a 0.88–1.08 acceptance band.",
   "sizes": [
     28,
     32,

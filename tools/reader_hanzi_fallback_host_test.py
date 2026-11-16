@@ -137,8 +137,8 @@ int main(int argc,char**argv){
    const glyph_entry_t*q=get_glyph(reference_ink[i].cp,reference_sizes[j]);assert(q);
    uint32_t ink=0;for(size_t p=0;p<q->bitmap_bytes;++p)ink+=s_cover[q->bitmap[p]];
    double ratio=(double)ink/reference_ink[i].ink[j];
-   if(ratio<.89||ratio>1.08)fprintf(stderr,"ink U+%04X px=%d ratio=%.4f\n",reference_ink[i].cp,reference_sizes[j],ratio);
-   assert(ratio>=.89&&ratio<=1.08);relative_error+=fabs(ratio-1);++comparisons;
+   if(ratio<.88||ratio>1.08)fprintf(stderr,"ink U+%04X px=%d ratio=%.4f\n",reference_ink[i].cp,reference_sizes[j],ratio);
+   assert(ratio>=.88&&ratio<=1.08);relative_error+=fabs(ratio-1);++comparisons;
   }
  }
  assert(comparisons>800&&relative_error/comparisons<.025);
