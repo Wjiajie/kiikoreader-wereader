@@ -70,6 +70,7 @@ const EpdWaveform* display_main_shelf37_waveform(bool art){(void)art;return NULL
 const EpdWaveform* display_du14_white_waveform(void){return NULL;}
 const EpdWaveform* display_main_clean_waveform_with_phases(const EpdWaveform* wave,enum EpdDrawMode mode,unsigned white){(void)mode;assert(white==0||white==6||white==8);return wave;}
 const EpdWaveform* display_main_background_waveform_with_phases(const EpdWaveform* wave,enum EpdDrawMode mode,unsigned white){return display_main_clean_waveform_with_phases(wave,mode,white);}
+const EpdWaveform* display_main_fast_background_waveform_with_phases(const EpdWaveform* wave,enum EpdDrawMode mode,unsigned white){return display_main_clean_waveform_with_phases(wave,mode,white);}
 const EpdWaveform* display_main_switch_waveform(const EpdWaveform *wave,enum EpdDrawMode mode){(void)mode;return wave;}
 const EpdWaveform* display_main_shelf_waveform(enum EpdDrawMode mode){(void)mode;return &E0470_WAVEFORM;}
 const EpdWaveform* display_main_bw_waveform(void) {return &E0470_WAVEFORM;}
@@ -397,9 +398,10 @@ int main(void) {
     assert(clears==0&&draws==1&&full_draws==1&&last_mode==MODE_GC16&&!white_baseline&&correct_target_at_draw);
     assert(waveform_at_draw==&E0470_FULL_WAVEFORM);
     assert(!memcmp(front,target,FB_BYTES)&&!memcmp(back,target,FB_BYTES));
-    // 手动修复保留目标页和底栏，只做一次最终整屏输出；成功后局部更新不再被迫全刷。
-    // Manual repair preserves the target and navigation with one final full output, then allows local updates again.
+    // S31 强化修复：4 轮 epd_clear_checked（每轮 3×26 相）+ 最多 3 次白底 GC16；白刷失败则走 main_recover。
+    // Strengthened S31 repair: four clear_checked rounds (3×26 phases each) plus up to three white GC16 passes; white faults hand off to main_recover.
     checking_repair = true;
+    enum { S31_REPAIR_CLEAR_ROUNDS = 4, S31_REPAIR_CLEAR_CYCLES = 3, S31_REPAIR_PHASES = 26 };
     for (int failure = 0; failure < 3; ++failure) {
         memcpy(front, target, FB_BYTES); memset(back, 0x55, FB_BYTES);
         blind_pushes = repair_delays = poweroffs = 0;
@@ -409,9 +411,11 @@ int main(void) {
         display_main_transition_arm(&hl, true, true);
         display_request_full_refresh();
         enum EpdDrawError repaired = display_panel_repair(&hl);
-        assert(blind_pushes == 3 * 26 && repair_delays == 3 && poweroffs == (failure?4u:3u));
+        assert(blind_pushes == (unsigned)(S31_REPAIR_CLEAR_ROUNDS * S31_REPAIR_CLEAR_CYCLES * S31_REPAIR_PHASES));
+        assert(repair_delays == (failure ? 17u : 19u));
+        assert(poweroffs == (failure ? 4u : 5u));
         assert(!memcmp(front, target, FB_BYTES) && hl.waveform == &E0470_WAVEFORM);
-        assert(draws == (failure ? 2 : 1) && full_draws == draws);
+        assert(draws == (failure ? 2 : 3) && full_draws == draws);
         assert(correct_target_at_draw && white_baseline && !ota_display_depth);
         assert((repaired == EPD_DRAW_SUCCESS) == (failure != 2));
         int prior = full_draws;
@@ -419,22 +423,21 @@ int main(void) {
                                             (EpdRect){0,160,16,16}) == EPD_DRAW_SUCCESS);
         assert(full_draws == prior + (failure == 2));
     }
-    // 任一原生清屏相失败都立即终止，不确认白底历史；下次输出必须恢复全刷。
-    // Stop at every native clear-phase fault; never commit a fictitious white reference.
-    for (unsigned phase = 1; phase <= 78; ++phase) {
+    // 原生清屏相失败会立刻停止盲刷，并交给 main_recover 从白底重建。
+    // A native clear-phase fault stops blind driving and hands off to main_recover from white.
+    for (unsigned phase = 1; phase <= (unsigned)(S31_REPAIR_CLEAR_CYCLES * S31_REPAIR_PHASES); ++phase) {
         memcpy(front, target, FB_BYTES); memset(back, 0x55, FB_BYTES);
         blind_pushes = repair_delays = poweroffs = 0;
         draws = full_draws = 0;
         fail_clear_at = phase;
-        assert(display_panel_repair(&hl) == EPD_DRAW_EMPTY_LINE_QUEUE);
-        assert(blind_pushes == phase && draws == 0 && !drive_active && !ota_display_depth);
+        assert(display_panel_repair(&hl) == EPD_DRAW_SUCCESS);
+        assert(blind_pushes == phase && draws >= 1 && !drive_active && !ota_display_depth);
         assert(!memcmp(front, target, FB_BYTES));
-        for (int j = 0; j < FB_BYTES; ++j) assert(back[j] == 0x55);
         fail_clear_at = 0;
         int prior = full_draws;
         assert(update_display_area_diff_with(&hl, &E0470_WAVEFORM, MODE_GL16,
                                             (EpdRect){0,160,16,16}) == EPD_DRAW_SUCCESS);
-        assert(full_draws == prior + 1);
+        assert(full_draws == prior);
     }
     unsigned prior_pushes = blind_pushes;
     assert(display_panel_repair(NULL) == EPD_DRAW_INVALID_CROP && blind_pushes == prior_pushes);

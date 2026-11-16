@@ -55,6 +55,12 @@ const EpdWaveform* display_reader_water_waveform(void) {return &reader_soft;}
 const EpdWaveform* display_main_clean_waveform_with_phases(const EpdWaveform* wave,enum EpdDrawMode mode,unsigned white) {
     assert(wave&&(mode==MODE_GL16||mode==MODE_DU)&&white>=6&&white<=8);return wave;
 }
+const EpdWaveform* display_main_fast_background_waveform_with_phases(const EpdWaveform* wave,enum EpdDrawMode mode,unsigned white) {
+    return display_main_clean_waveform_with_phases(wave,mode,white);
+}
+const EpdWaveform* display_main_background_waveform_with_phases(const EpdWaveform* wave,enum EpdDrawMode mode,unsigned white) {
+    return display_main_clean_waveform_with_phases(wave,mode,white);
+}
 const EpdWaveform* display_main_water_waveform(void) {return &soft_gray;}
 const EpdWaveform* display_main_normal_waveform(void) { return display_main_water_waveform(); }
 const EpdWaveform* display_main_ui_waveform(void) {return display_main_normal_waveform();}
