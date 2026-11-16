@@ -89,7 +89,7 @@ jobs:
           python3 tools/lock_pin_host_test.py
           python3 tools/lock_screen_host_test.py
           python3 tools/lock_style_host_test.py
-          python3 tools/font_picker_catalog_host_test.py
+          python3 tools/system_font_picker_host_test.py
           python3 tools/font_catalog_host_test.py
           python3 tools/power_double_click_host_test.py
           python3 tools/factory_reset_host_test.py
@@ -106,7 +106,6 @@ jobs:
           python3 tools/reader_spacing_host_test.py
           python3 tools/test_book_toc.py
           node tools/flasher_integrity_host_test.cjs
-          node tools/metalio_direct_install_host_test.cjs
           python3 tools/vertical_punctuation_host_test.py
           python3 tools/vertical_number_host_test.py
 

@@ -53,7 +53,7 @@ psa_status_t psa_key_derivation_input_bytes(psa_key_derivation_operation_t*,int,
 psa_status_t psa_key_derivation_output_bytes(psa_key_derivation_operation_t*,uint8_t*,size_t);
 psa_status_t psa_key_derivation_abort(psa_key_derivation_operation_t*);
 ''')
-    expected=hashlib.pbkdf2_hmac('sha256',b'7391',bytes(range(1,17)),10000).hex()
+    expected=hashlib.pbkdf2_hmac('sha256',b'7391',bytes(range(1,17)),100000).hex()
     unit=r'''
 #include <assert.h>
 #include <stdio.h>
@@ -78,7 +78,7 @@ void nvs_close(nvs_handle_t h){assert(h==1);memset(&staged,0,sizeof(staged));}
 void esp_fill_random(void *out,size_t n){assert(n==16);uint8_t *p=out;for(unsigned i=0;i<n;++i)p[i]=i+1+generation;generation+=16;}
 psa_status_t psa_crypto_init(void){return crypto_fail==1?-1:0;}
 psa_status_t psa_key_derivation_setup(psa_key_derivation_operation_t *o,int alg){assert(alg==PSA_ALG_PBKDF2_HMAC(PSA_ALG_SHA_256));o->stage=1;return crypto_fail==2?-1:0;}
-psa_status_t psa_key_derivation_input_integer(psa_key_derivation_operation_t *o,int which,uint64_t n){assert(o->stage==1&&which==PSA_KEY_DERIVATION_INPUT_COST&&n==10000);o->cost=n;o->stage=2;return crypto_fail==3?-1:0;}
+psa_status_t psa_key_derivation_input_integer(psa_key_derivation_operation_t *o,int which,uint64_t n){assert(o->stage==1&&which==PSA_KEY_DERIVATION_INPUT_COST&&n==100000);o->cost=n;o->stage=2;return crypto_fail==3?-1:0;}
 psa_status_t psa_key_derivation_input_bytes(psa_key_derivation_operation_t *o,int which,const uint8_t *p,size_t n){if(which==PSA_KEY_DERIVATION_INPUT_SALT){assert(o->stage==2&&n==16);memcpy(o->salt,p,n);o->stage=3;return crypto_fail==4?-1:0;}assert(which==PSA_KEY_DERIVATION_INPUT_PASSWORD&&o->stage==3&&n==4);memcpy(o->pin,p,n);o->stage=4;return crypto_fail==5?-1:0;}
 psa_status_t psa_key_derivation_output_bytes(psa_key_derivation_operation_t *o,uint8_t *d,size_t n){assert(o->stage==4&&n==32);if(crypto_fail==6)return -1;
 #ifdef __APPLE__

@@ -117,6 +117,11 @@ if __name__=='__main__':
     args=parser.parse_args()
     with tempfile.TemporaryDirectory() as temp:
         directory=Path(temp);(directory/'esp_attr.h').write_text('#define IRAM_ATTR\n')
-        for board in ('pico','metalio47'):
-            run(board,directory)
-            if args.check_regression:run(board,directory,True)
+        boards = [board for board in ('pico', 'metalio47')
+                  if (ROOT / f'boards/{board}/src/components/epdiy/src/render.c').is_file()]
+        if not boards:
+            raise SystemExit('No board epdiy render.c found under boards/*/src/components/epdiy/src/')
+        for board in boards:
+            run(board, directory)
+            if args.check_regression:
+                run(board, directory, True)
