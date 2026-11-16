@@ -1314,6 +1314,8 @@ esp_err_t app_settings_backup_save(void) {
     settings_backup_wifi_t wifi = {0};
     esp_err_t wifi_err = read_pico_transfer_export_wifi_backup(&wifi.credentials);
     if (wifi_err != ESP_OK) { backup_erase_secret(&wifi, sizeof(wifi)); return wifi_err; }
+    // TF 备份只保留 SSID，不落盘 Wi-Fi 密码。/ Keep SSIDs in TF backups; never persist Wi-Fi passwords.
+    backup_erase_secret(wifi.credentials.password, sizeof(wifi.credentials.password));
     backup_wifi_seal(&wifi);
     settings_backup_background_t background = {0};
     strlcpy(background.path, s_book_background, sizeof(background.path));
@@ -1680,7 +1682,13 @@ esp_err_t app_settings_backup_restore(void) {
         if (history_err != ESP_OK) { backup_erase_secret(&wifi, sizeof(wifi)); return history_err; }
     }
     if (has_wifi) {
-        esp_err_t wifi_err = read_pico_transfer_import_wifi_backup(&wifi.credentials);
+        // 无密码的备份（含新安全导出）不改写设备上已有凭据。/ Passwordless backups (including new secure exports) leave on-device secrets alone.
+        bool has_password = false;
+        for (size_t i = 0; i < sizeof(wifi.credentials.password); ++i) {
+            if (wifi.credentials.password[i]) { has_password = true; break; }
+        }
+        esp_err_t wifi_err = ESP_OK;
+        if (has_password) wifi_err = read_pico_transfer_import_wifi_backup(&wifi.credentials);
         backup_erase_secret(&wifi, sizeof(wifi));
         if (wifi_err != ESP_OK) return wifi_err;
     }

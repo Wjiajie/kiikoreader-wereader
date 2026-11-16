@@ -16,7 +16,8 @@
 #include "esp_err.h"
 #include "read_pico_transfer_network.h"
 
-#define READ_PICO_TRANSFER_PASSWORD "kiikoread"
+// 固定口令已废弃；运行时使用 status.ap_password。/ Fixed password retired; use status.ap_password at runtime.
+#define READ_PICO_TRANSFER_PASSWORD ""
 #define READ_PICO_TRANSFER_URL "http://192.168.4.1"
 
 typedef enum {
@@ -61,6 +62,8 @@ typedef struct {
     bool network_ready; ///< 已取得可用网络地址 / Usable network address acquired
     unsigned sta_count; ///< 连接数 / Station count
     char ssid[33]; ///< 热点名称 / AP name
+    char ap_password[17]; ///< 设备生成的热点口令 / Device-generated AP password
+    char access_token[9]; ///< 网页管理会话令牌 / Web management session token
     char cur_name[241]; ///< 完整 UTF-8 文件名 / Complete UTF-8 filename
     size_t cur_bytes; ///< 已接收字节 / Received bytes
     size_t cur_total; ///< 本次总字节 / Request total bytes

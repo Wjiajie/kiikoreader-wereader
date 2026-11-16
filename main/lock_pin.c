@@ -11,7 +11,9 @@
 #include "esp_random.h"
 #include "nvs.h"
 #include "psa/crypto.h"
-#define PIN_ITERATIONS 10000u
+// 新密码使用更高迭代；旧记录仍按落盘 iterations 校验。/ New PINs use a higher cost; legacy records keep their stored iterations.
+#define PIN_ITERATIONS 100000u
+#define PIN_ITERATIONS_LEGACY_MIN 10000u
 #define PIN_MAGIC UINT32_C(0x50494e31)
 typedef struct { uint32_t magic, iterations; uint8_t salt[16], digest[32]; } pin_record_t;
 static pin_record_t s_record;
@@ -23,6 +25,11 @@ static bool pin_valid(const char pin[5]) {
     if (!pin) return false;
     for (unsigned i=0;i<4;++i) if (pin[i]<'0'||pin[i]>'9') return false;
     return pin[4]==0;
+}
+static bool pin_record_acceptable(const pin_record_t *record) {
+    return record && record->magic == PIN_MAGIC &&
+           record->iterations >= PIN_ITERATIONS_LEGACY_MIN &&
+           record->iterations <= PIN_ITERATIONS;
 }
 static void load(void) {
     if (s_loaded) return;
@@ -36,7 +43,7 @@ static void load(void) {
     error=nvs_get_blob(handle,"credential",&s_record,&size);
     nvs_close(handle);
     if (error==ESP_ERR_NVS_NOT_FOUND) {s_loaded=true;s_available=true;return;}
-    if (error==ESP_OK && size==sizeof(s_record) && s_record.magic==PIN_MAGIC && s_record.iterations==PIN_ITERATIONS)
+    if (error==ESP_OK && size==sizeof(s_record) && pin_record_acceptable(&s_record))
         s_loaded=s_enabled=s_available=true;
     if (!s_available) lock_pin_wipe(&s_record,sizeof(s_record));
 }

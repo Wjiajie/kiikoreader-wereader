@@ -193,7 +193,7 @@ static void prepare_qr(void) {
     if (!s_status.network_ready) return;
     s_qr_ready = s_qr_url || s_mode == READ_PICO_TRANSFER_MODE_STA
         ? ui_wifi_qr_prepare_url(s_status.url)
-        : ui_wifi_qr_prepare(s_status.ssid, READ_PICO_TRANSFER_PASSWORD);
+        : ui_wifi_qr_prepare(s_status.ssid, s_status.ap_password[0] ? s_status.ap_password : "********");
 }
 
 typedef enum { TRANSFER_METHODS, TRANSFER_HOME, TRANSFER_NETWORKS, TRANSFER_PASSWORD } transfer_view_t;
@@ -830,9 +830,12 @@ static void render_content(app_ctx_t* ctx, uint8_t* fb) {
     if (!name[0]) snprintf(name, sizeof(name), "%s", s_mode == READ_PICO_TRANSFER_MODE_AP ? "kiikoread 热点" : "已保存的 WiFi");
     fit_label(name, 26, 420);
     ui_text(fb, 66, 190, 26, name, EPD_DRAW_ALIGN_LEFT, false);
+    char ap_line[48];
+    if (s_mode == READ_PICO_TRANSFER_MODE_AP)
+        snprintf(ap_line, sizeof(ap_line), "口令：%s", s_status.ap_password[0] ? s_status.ap_password : "生成中…");
     ui_text(fb, 66, 236, 19,
-            s_mode == READ_PICO_TRANSFER_MODE_AP ? "口令：" READ_PICO_TRANSFER_PASSWORD :
-            s_status.network_ready ? "设备已连接；手机需同网" :
+            s_mode == READ_PICO_TRANSFER_MODE_AP ? ap_line :
+            s_status.network_ready ? "设备已连接；请扫屏上二维码打开网页" :
             s_start_pending || s_status.state == READ_PICO_TRANSFER_STARTING ? "正在连接已保存网络…" :
             s_status.wifi_configured ? "已保存，尚未连接" : "尚未选择 WiFi",
             EPD_DRAW_ALIGN_LEFT, false);

@@ -13,6 +13,8 @@ unit=r'''
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+static bool s_txt_opening;
+static void pico_boot_book_end(bool opened){assert(opened);}
 typedef struct {int x,y,width,height;} EpdRect;
 typedef struct {void *hl;uint8_t *fb;int64_t now_ms;bool request_app;} app_ctx_t;
 typedef enum {APP_REDRAW_NONE,APP_REDRAW_AREA,APP_REDRAW_PAGE,APP_REDRAW_FULL,APP_REDRAW_DONE} app_redraw_t;
@@ -98,6 +100,7 @@ static enum EpdDrawError update_display_area_full_with(void *h,const int *w,int 
 #define update_display_mode_diff(...) push(17)
 static enum EpdDrawError update_display_water_turn(void*hl,EpdRect area,int dir){(void)hl;(void)dir;last_water_area=area;return push(18);}
 #define E0470_TURN_RTL 0
+typedef int e0470_turn_dir_t;
 static enum EpdDrawError update_display_text_turn(void *hl,EpdRect area,int dir){
  (void)hl;assert(dir==E0470_TURN_RTL);last_text_area=area;return push(20);
 }
@@ -119,6 +122,9 @@ for name in ('reader_area','reader_fullscreen_progress_area','progress_rect'):
 unit+='static enum EpdDrawError reader_present_crop(void *hl,const EpdWaveform *wave,int mode,EpdRect area,bool full){return full?update_display_area_full_with(hl,wave,mode,area):update_display_area_diff_with(hl,wave,mode,area); }\n'
 unit+=function('reader_soft_present',root/'main/apps/app_book.c')+'\n'
 unit+=function('reader_image_present',root/'main/apps/app_book.c')+'\n'
+unit+='static void wr_reading_display(bool on){(void)on;}\n'
+unit+=function('reader_text_effect_present',root/'main/apps/app_book.c')+'\n'
+unit+=function('present_book_frame',root/'main/apps/app_book.c')+'\n'
 unit+=function('present',root/'main/apps/app_book.c')
 unit+=r'''
 static void reset(void){
@@ -169,16 +175,16 @@ int main(void){
  present(&ctx,APP_REDRAW_AREA);assert(calls==1&&selected==21&&rendered==0); // local UI: no footer replay
  reset();fail=1;s_reader_footer_pending=false;
  present(&ctx,APP_REDRAW_AREA);assert(calls==1&&selected==20&&!s_reader_text_frame);
- reset();s_water_turn_pending=true;s_reader_footer_pending=false;
+ reset();tick=1;s_water_turn_pending=true;s_reader_footer_pending=false;
  present(&ctx,APP_REDRAW_AREA);assert(selected==18&&calls==1&&!s_water_turn_pending);
  for(int full=0;full<2;++full){
-  reset();s_reader_fullscreen=full;s_area=reader_area();s_water_turn_pending=true;
+  reset();tick=1;s_reader_fullscreen=full;s_area=reader_area();s_water_turn_pending=true;
   s_area=(EpdRect){0,160,684,900};
   present(&ctx,APP_REDRAW_AREA);assert(selected==18&&calls==1&&!s_water_turn_pending);
   assert(last_water_area.x==0&&last_water_area.y==0&&last_water_area.width==684&&last_water_area.height==1216);
  }
  s_area=(EpdRect){0,0,684,1216};
- reset();fail=1;s_water_turn_pending=true;
+ reset();tick=1;fail=1;s_water_turn_pending=true;
  present(&ctx,APP_REDRAW_AREA);assert(selected==18&&calls==1&&!s_reader_text_frame);
  // 图像始终保留灰阶，进度同轮输出。/ Images retain gray targets with deferred metadata.
  for(int effect=0;effect<3;++effect)for(int full=0;full<2;++full)for(int hide_status=0;hide_status<2;++hide_status)for(int kind=0;kind<3;++kind){

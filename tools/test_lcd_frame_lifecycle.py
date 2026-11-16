@@ -24,6 +24,7 @@ harness = r'''
 #define pdMS_TO_TICKS(n) (n)
 #define ESP_LOGD(...) ((void)0)
 #define ESP_LOGI(...) ((void)0)
+#define ESP_LOGW(...) ((void)0)
 #define ESP_LOGE(...) ((void)0)
 #define portMAX_DELAY -1
 #define portYIELD_FROM_ISR() ((void)0)

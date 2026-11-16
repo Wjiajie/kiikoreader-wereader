@@ -67,8 +67,8 @@ static void pico_boot_clear_resume(void){++cleared;}
 static bool pico_boot_has_resume(void){return boot_cache;}
 static bool pico_boot_lock_pending(void){return false;}
 static bool metalio_boot_power_key(void){return false;}
-static unsigned app_settings_wake_presses(void){return 1;}
-static void read_pico_pmu_latch_power_wakeup(void){assert(false);}
+static unsigned __attribute__((unused)) app_settings_wake_presses(void){return 1;}
+static void __attribute__((unused)) read_pico_pmu_latch_power_wakeup(void){assert(false);}
 static void app_settings_record_pin_lock(uint32_t at){assert(at==0||at>=1704067200);}
 static void pico_boot_ready(void){}
 static void pico_boot_hold_resume(void){}
@@ -79,12 +79,13 @@ static bool lock_screen_restore(uint8_t*f){if(!cache_ok||old_style!=style)return
 static void lock_wait_for_unlock(void*a){assert(a==(void*)1&&s_lock_sleep_touch==(void*)2);++waits;assert(!pin);}
 static void lock_screen_authenticate(void*h,void*t,void*a,bool boot){(void)h;assert(t==(void*)2&&a==(void*)1&&pin&&boot==boot_cache);++auths;assert(pixels[0]==(decode_ok?0x10+style:0xff));}
 static int64_t esp_timer_get_time(void){return 2000000;}
+static int64_t s_lock_io_retry_us;
 static int epd_width(void){return 1216;}
 static int epd_height(void){return 684;}
 static int read_pico_sd_get_info(read_pico_sd_info_t*i){i->mounted=true;return 0;}
 static void vTaskDelay(int ms){assert(ms==20);}
 '''
-for name in ['lock_present_art','draw_wallpaper','enter_lock_and_sleep','app_lock_boot_gate']:u+=function(name,r/'main/sleep.c')+'\n'
+for name in ['lock_clear_wake_target','lock_present_art','draw_wallpaper','enter_lock_and_sleep','app_lock_boot_gate']:u+=function(name,r/'main/sleep.c')+'\n'
 u+=r'''
 static void reset(void){media_resumes=0;memset(draws,0,sizeof(draws));presents=outputs=auths=begins=ends=resumes=cleared=waits=saves=lamp_off=lamp_restore=white_outputs=white_faults=image_clears=0;system_binary=pin=boot_cache=s_lock_feedback_started=s_lock_deep_ready=s_lock_frame_cached=false;s_lock_sleep_touch=NULL;decode_ok=transfer_ok=ble_ok=output_ok=white_ok=true;cache_ok=false;background=0x32;memset(panel,background,FRAME_BYTES);memset(pixels,0x99,FRAME_BYTES);}
 int main(void){EpdiyHighlevelState hl={panel};

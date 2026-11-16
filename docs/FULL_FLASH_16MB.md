@@ -1,13 +1,13 @@
 <!-- SPDX-FileCopyrightText: 2026 YIYO-Designer -->
 <!-- SPDX-License-Identifier: LicenseRef-Kiikoread-Personal-Study-1.0 -->
 
-# Metalio S31 0.3.3-rc113 最终版：16 MiB 全闪存包
+# Metalio S31 0.3.3-rc114 最终版：16 MiB 全闪存包
 
 此发行版提供针对 Metalio 4.7 V1.5 / ESP32-S31 的 16 MiB 原始闪存镜像。它不是普通应用升级包，只能从闪存地址 `0x0` 写入。
 
 ## 下载
 
-打开 [GitHub 最新发行版](https://github.com/YIYO-Designer/kiikoreader-wereader/releases/latest)，下载 `kiikoread-metalio47-0.3.3-rc113-final-full-flash-16MB.bin` 和 `SHA256SUMS.txt`。发行版同时提供 ZIP 压缩包和此说明。
+打开 [GitHub 最新发行版](https://github.com/YIYO-Designer/kiikoreader-wereader/releases/latest)，下载 `kiikoread-metalio47-0.3.3-rc114-final-full-flash-16MB.bin` 和 `SHA256SUMS.txt`。发行版同时提供 ZIP 压缩包和此说明。
 
 ## 注意数据清除
 
@@ -20,7 +20,7 @@
 安装 esptool 5.6.0，并将 `COM12` 替换成设备当前端口。在镜像所在目录打开 PowerShell：
 
 ```powershell
-python -m esptool --chip esp32s31 --port COM12 --baud 115200 --before default-reset --after hard-reset --no-stub write-flash --flash-mode dio --flash-size 16MB --flash-freq 80m 0x0 .\kiikoread-metalio47-0.3.3-rc113-final-full-flash-16MB.bin
+python -m esptool --chip esp32s31 --port COM12 --baud 115200 --before default-reset --after hard-reset --no-stub write-flash --flash-mode dio --flash-size 16MB --flash-freq 80m 0x0 .\kiikoread-metalio47-0.3.3-rc114-final-full-flash-16MB.bin
 ```
 
 如果刷写器提示芯片未进入下载模式，请按设备的 BOOT/复位方式重新进入下载模式后重试。确保使用可靠的数据线，刷写期间不要拔线或断电。
@@ -30,7 +30,7 @@ python -m esptool --chip esp32s31 --port COM12 --baud 115200 --before default-re
 SHA-256 校验文件随发行版提供。PowerShell 校验命令：
 
 ```powershell
-(Get-FileHash .\kiikoread-metalio47-0.3.3-rc113-final-full-flash-16MB.bin -Algorithm SHA256).Hash.ToLower()
+(Get-FileHash .\kiikoread-metalio47-0.3.3-rc114-final-full-flash-16MB.bin -Algorithm SHA256).Hash.ToLower()
 ```
 
 结果应与 `SHA256SUMS.txt` 中的镜像摘要一致。镜像长度必须是 `16,777,216` 字节。

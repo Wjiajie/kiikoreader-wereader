@@ -1,6 +1,6 @@
 # kiikoreader WeRead Firmware
 
-Community firmware source for **kiikoreader Metalio S31**, based on firmware `0.3.3-rc113`. It integrates WeRead shelves, account management, book caching, progress synchronization, and reading-duration reporting while reusing the native shelf, reader, and system font settings.
+Community firmware source for **kiikoreader Metalio S31**, based on firmware `0.3.3-rc114`. It integrates WeRead shelves, account management, book caching, progress synchronization, and reading-duration reporting while reusing the native shelf, reader, and system font settings.
 
 > This is not an official release by Tencent/WeRead or Metalio/kiikoread. WeRead endpoints are unofficial service interfaces and may change without notice.
 
@@ -21,7 +21,7 @@ Community firmware source for **kiikoreader Metalio S31**, based on firmware `0.
 See [source layout](docs/SOURCE_LAYOUT.md), [WeRead architecture](docs/WEREAD_ARCHITECTURE.md), and [Metalio S31 build guide](docs/BUILD_METALIO_S31.md). ESP-IDF **v6.1** is required. From an exported ESP-IDF environment at the repository root:
 
 ```bash
-python tools/build_firmware.py --board metalio47 --idf-metalio47 "$IDF_PATH" --python "$(command -v python)" --output build/boards --s31-pie --s31-text-ripple --s31-reader-panel37
+python tools/build_firmware.py --board metalio47 --idf-metalio47 "$IDF_PATH" --python "$(command -v python)" --output build/boards
 ```
 
 GitHub Actions runs board builds and host-side checks. Verify the board, partition layout, and image type before flashing a device.
