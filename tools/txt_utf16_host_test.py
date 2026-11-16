@@ -31,12 +31,18 @@ void *heap_caps_malloc(size_t bytes,int caps){
 #include "book_policy.h"
 // 缓存外壳定向到临时目录，实际TXT载荷读写及版本校验仍由生产代码执行。
 // Redirect the cache shell into the fixture directory; production code handles TXT payloads/version requests.
-bool book_index_cache_prepare(const char *source,const char *tag,uint32_t version,
- char *path,size_t cap,book_index_cache_header_t *key){
+bool book_index_cache_prepare_file(const char *source,const char *tag,uint32_t version,
+ uint64_t size,int64_t modified,char *path,size_t cap,book_index_cache_header_t *key){
  if(disable_cache)return false;assert(!strcmp(tag,"txt")&&version==5);
  struct stat st;assert(!stat(source,&st));
- *key=(book_index_cache_header_t){.magic=123,.version=version,.source_size=(uint32_t)st.st_size,.modified=st.st_mtime,.path_hash=456};
+ assert(size==(uint64_t)st.st_size&&modified==(int64_t)st.st_mtime);
+ *key=(book_index_cache_header_t){.magic=123,.version=version,.source_size=(uint32_t)size,.modified=modified,.path_hash=456};
  return snprintf(path,cap,"%s.idx",source)>0;
+}
+bool book_index_cache_prepare(const char *source,const char *tag,uint32_t version,
+ char *path,size_t cap,book_index_cache_header_t *key){
+ struct stat st;if(stat(source,&st))return false;
+ return book_index_cache_prepare_file(source,tag,version,(uint64_t)st.st_size,(int64_t)st.st_mtime,path,cap,key);
 }
 FILE *book_index_cache_open_read(const char *path,const book_index_cache_header_t *key){
  FILE *f=fopen(path,"rb");if(!f)return NULL;book_index_cache_header_t found;
