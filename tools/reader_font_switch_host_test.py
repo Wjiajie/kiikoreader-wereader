@@ -53,6 +53,10 @@ static bool ttf_font_path_is_builtin(const char *p){return !p||!*p||!strcmp(p,"b
 static void save_progress(void){assert(!locked);++progress_saves;}
 static void free_book(void){assert(locked);freed=true;s_text=NULL;}
 static int64_t esp_timer_get_time(void){return 1000000;}
+static int app_settings_book_weight_fine(void){return 0;}
+static bool app_settings_book_antialias(void){return true;}
+static void ttf_set_stroke_adjust_fine(int n){(void)n;}
+static void ttf_set_antialias(bool b){(void)b;}
 '''
 unit+='#define FONT_STAGE_PUBLISHED() ((void)0)\n'+FIXTURE
 source=root/'main/apps/app_book.c'
@@ -66,7 +70,7 @@ static void reset(void){strcpy(active,"old.ttf");strcpy(saved,"old.ttf");strcpy(
  locked=invalidated=load_fails=layout_fails=persist_fails=restore_fails=freed=false;
  layout_calls=progress_saves=setting_writes=0;}
 int main(void){app_ctx_t ctx={0};ttf_font_item_t item={"new.ttf"};
- reset();create_fails=true;assert(select_reading_font_item(&ctx,&item)==APP_REDRAW_NONE&&!s_font_job&&!strcmp(active,"old.ttf"));create_fails=false;
+ reset();create_fails=true;assert(select_reading_font_item(&ctx,&item)==APP_REDRAW_PAGE&&!s_font_job&&!strcmp(active,"old.ttf")&&s_reader_notice[0]);create_fails=false;
  reset();assert(select_reading_font_item(&ctx,&item)==APP_REDRAW_PAGE&&s_font_job&&!invalidated&&!strcmp(active,"old.ttf"));
  assert(reader_font_reload_tick(&ctx)==APP_REDRAW_NONE);assert(select_reading_font_item(&ctx,&item)==APP_REDRAW_NONE);
  ttf_font_item_t latest={"latest.ttf"};assert(select_reading_font_item(&ctx,&latest)==APP_REDRAW_PAGE&&s_font_job&&!strcmp(active,"old.ttf"));
